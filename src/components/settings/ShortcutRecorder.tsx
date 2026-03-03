@@ -1,16 +1,13 @@
-import { useEffect, useState } from "react";
+import { Dispatch, SetStateAction, useEffect, useState } from "react";
 import { Button } from "../ui/button";
-import {
-  buildShortcutFromKeyboardEvent,
-  formatShortcutLabel,
-} from "@/utils/shortcuts";
+import { buildShortcutFromKeyboardEvent, formatShortcutLabel } from "@/utils/shortcuts";
 import { useTranslation } from "react-i18next";
 
 export interface ShortcutRecorderProps {
   value: string;
   onChange: (value: string) => void;
   isRecording?: boolean;
-  onRecordingChange?: (recording: boolean) => void;
+  onRecordingChange?: Dispatch<SetStateAction<boolean>>;
 }
 
 export default function ShortcutRecorder({
@@ -75,11 +72,7 @@ export default function ShortcutRecorder({
           if (recording) e.stopPropagation();
         }}
         onClick={() => {
-          if (onRecordingChange) {
-            onRecordingChange(!recording);
-          } else {
-            setInternalRecording((prev) => !prev);
-          }
+          setRecording((prev) => !prev);
         }}
       >
         {recording ? recordingLabel : label || unassignedLabel}

@@ -18,7 +18,13 @@ import {
 import { Check, ChevronsUpDown } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -425,8 +431,13 @@ export default function SettingsPage() {
                   value={keybindings[item.action] ?? ""}
                   onChange={(combo) => setKeybinding(item.action, combo)}
                   isRecording={recordingAction === item.action}
-                  onRecordingChange={(recording) => {
-                    setRecordingAction(recording ? item.action : null);
+                  onRecordingChange={(action: SetStateAction<boolean>) => {
+                    const isRecording = recordingAction === item.action;
+                    const newRecording =
+                      typeof action === "function"
+                        ? action(isRecording)
+                        : action;
+                    setRecordingAction(newRecording ? item.action : null);
                   }}
                 />
               </div>
