@@ -674,7 +674,8 @@
   "ai-client": {
     "openai": {
       "requires-response-api-online-search": "Using online search requires Responses API to be enabled",
-      "requires-response-api-pdf": "Using PDF recognition requires Responses API to be enabled"
+      "requires-response-api-pdf": "Using PDF recognition requires Responses API to be enabled",
+      "web-search-not-supported": "Model {{model}} does not support web search, continuing without it"
     }
   }
 }

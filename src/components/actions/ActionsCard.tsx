@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { useShortcut } from "@/hooks/use-shortcut";
 import { ShortcutHint } from "../ShortcutHint";
 import { useSettingsStore } from "@/store/settings-store";
-import { useAiStore, type AiModelSummary } from "@/store/ai-store";
+import { type AiModelSummary, useAiStore } from "@/store/ai-store";
 import { Check, ChevronsUpDown, Globe } from "lucide-react";
 import {
   Command,
@@ -37,7 +37,7 @@ function OnlineSearchToggle({
     <label className="relative flex-1 cursor-pointer group">
       <input
         type="checkbox"
-        className="hidden peer"
+        className="sr-only peer"
         checked={checked}
         onChange={(e) => onCheckedChange(e.target.checked)}
       />
@@ -50,6 +50,7 @@ function OnlineSearchToggle({
           // Checked
           "peer-checked:from-blue-900 peer-checked:to-blue-950 peer-checked:border-blue-800 peer-checked:text-white peer-checked:shadow-lg peer-checked:shadow-blue-900/20",
           "peer-checked:-translate-y-0.5",
+          "peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 peer-focus-visible:ring-offset-2",
           "w-full",
         )}
       >

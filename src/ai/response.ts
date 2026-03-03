@@ -144,13 +144,16 @@ export function parseSolveResponse(response: string): SolveResponse {
       sections,
       "ONLINE_SEARCH",
     );
-    const onlineSearch = hasOnlineSearch ? sections["ONLINE_SEARCH"] : undefined;
+    const onlineSearch = hasOnlineSearch
+      ? sections["ONLINE_SEARCH"]
+      : undefined;
 
-    if (problemText || explanation || answer || onlineSearch) {
+    if (problemText || explanation || answer || hasOnlineSearch) {
       problems.push({
-        problem: problemText || (onlineSearch ? "Online Search Results" : ""),
+        problem:
+          problemText || (hasOnlineSearch ? "Online Search Results" : ""),
         explanation:
-          explanation || (onlineSearch ? "See search results below." : ""),
+          explanation || (hasOnlineSearch ? "See search results below." : ""),
         answer: answer || "",
         // Parse steps specifically from the explanation text
         steps: MarkdownSectionParser.parseSteps(explanation),

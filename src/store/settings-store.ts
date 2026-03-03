@@ -163,8 +163,9 @@ export const useSettingsStore = create<SettingsState>()(
         }
 
         const existing = (data as { keybindings?: ShortcutMap }).keybindings;
+        const legacyDevtools = (data as { devtools?: boolean }).devtools;
 
-        return {
+        const migratedData = {
           ...data,
           keybindings: existing
             ? { ...DEFAULT_SHORTCUTS, ...existing }
@@ -187,7 +188,14 @@ export const useSettingsStore = create<SettingsState>()(
           showOnlineSearchInScanner:
             (data as { showOnlineSearchInScanner?: boolean })
               .showOnlineSearchInScanner ?? false,
+          devtoolsEnabled:
+            (data as { devtoolsEnabled?: boolean }).devtoolsEnabled ??
+            legacyDevtools ??
+            false,
         };
+
+        delete (migratedData as Record<string, unknown>).devtools;
+        return migratedData;
       },
     },
   ),

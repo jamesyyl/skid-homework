@@ -3,17 +3,17 @@
 import { useQwenHintAutoToggle } from "@/hooks/useQwenHintAutoToggle";
 import { cn } from "@/lib/utils";
 import {
-  DEFAULT_GEMINI_BASE_URL,
-  DEFAULT_OPENAI_BASE_URL,
-  useAiStore,
   type AiModelSummary,
   type AiProvider,
+  DEFAULT_GEMINI_BASE_URL,
+  DEFAULT_OPENAI_BASE_URL,
+  useAiStore
 } from "@/store/ai-store";
 import {
-  useSettingsStore,
   type LanguagePreference,
   type ShortcutAction,
   type ThemePreference,
+  useSettingsStore
 } from "@/store/settings-store";
 import { Check, ChevronsUpDown } from "lucide-react";
 import Link from "next/link";
@@ -26,22 +26,9 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import ShortcutRecorder from "./ShortcutRecorder";
 import { useTheme } from "../theme-provider";
 import { Button } from "../ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "../ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Checkbox } from "../ui/checkbox";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "../ui/command";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "../ui/command";
 import { Input } from "../ui/input";
 import { Kbd } from "../ui/kbd";
 import { Label } from "../ui/label";
@@ -575,7 +562,7 @@ export default function SettingsPage() {
                   id="online-search-toggle"
                   checked={onlineSearchEnabled}
                   onCheckedChange={(state) =>
-                    setOnlineSearchEnabled(Boolean(state))
+                    setOnlineSearchEnabled(state === true)
                   }
                 />
                 <div className="space-y-1">
@@ -595,7 +582,7 @@ export default function SettingsPage() {
                   id="show-online-search-scanner"
                   checked={showOnlineSearchInScanner}
                   onCheckedChange={(state) =>
-                    setShowOnlineSearchInScanner(Boolean(state))
+                    setShowOnlineSearchInScanner(state === true)
                   }
                 />
                 <Label htmlFor="show-online-search-scanner">
@@ -674,7 +661,9 @@ export default function SettingsPage() {
               <Checkbox
                 id="clear-dialog-on-submit"
                 checked={clearDialogOnSubmit}
-                onCheckedChange={(state) => setClearDialogOnSubmit(Boolean(state))}
+                onCheckedChange={(state) =>
+                  setClearDialogOnSubmit(state === true)
+                }
               />
               <Label htmlFor="clear-dialog-on-submit">
                 {t("advanced.ui.clear-dialog-on-submit")}

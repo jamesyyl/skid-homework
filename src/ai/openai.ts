@@ -6,6 +6,7 @@ import { base64Decoder } from "@/utils/encoding";
 import { toast } from "sonner";
 import i18n from "@/i18n";
 import type { AiFile } from "@/store/ai-store";
+import { NonRetryableError } from "./errors";
 
 export type OpenAiModel = {
   name: string;
@@ -85,7 +86,9 @@ export class OpenAiClient extends BaseAiClient {
             ns: "commons",
           }),
         );
-        throw new Error("Online search requires Responses API to be enabled.");
+        throw new NonRetryableError(
+          "Online search requires Responses API to be enabled.",
+        );
       }
       if (file.mimeType === "application/pdf") {
         toast.error(
@@ -93,7 +96,9 @@ export class OpenAiClient extends BaseAiClient {
             ns: "commons",
           }),
         );
-        throw new Error("PDF processing requires Responses API to be enabled.");
+        throw new NonRetryableError(
+          "PDF processing requires Responses API to be enabled.",
+        );
       }
       return this._sendMediaLegacy(file, prompt, model, callback);
     }
@@ -238,7 +243,9 @@ export class OpenAiClient extends BaseAiClient {
           ns: "commons",
         }),
       );
-      throw new Error("Online search requires Responses API to be enabled.");
+      throw new NonRetryableError(
+        "Online search requires Responses API to be enabled.",
+      );
     }
 
     if (this.useResponsesApi) {
@@ -402,45 +409,17 @@ export class OpenAiClient extends BaseAiClient {
         message.includes("Web search options not supported");
       if (options?.onlineSearch && notSupported) {
         console.warn(
-          `Web search not supported for model ${model}; falling back without search.`,
+          `Web search not supported for model ${model}; retrying Responses API without search tools.`,
         );
-        const legacyMessages = messages.map((msg) => {
-          if (typeof msg.content === "string") {
-            return { role: msg.role, content: msg.content };
-          }
-          if (!Array.isArray(msg.content)) {
-            return { role: msg.role, content: "" };
-          }
-          const contentParts: Array<
-            | { type: "text"; text: string }
-            | {
-                type: "image_url";
-                image_url: { url: string; detail?: "auto" | "low" | "high" };
-              }
-          > = [];
-          for (const part of msg.content) {
-            if (part.type === "input_text") {
-              contentParts.push({ type: "text", text: part.text });
-            } else if (part.type === "input_image") {
-              contentParts.push({
-                type: "image_url",
-                image_url: {
-                  url: part.image_url.url,
-                  detail: part.image_url.detail ?? "auto",
-                },
-              });
-            }
-          }
-          if (contentParts.length === 0) {
-            return { role: msg.role, content: "" };
-          }
-          if (contentParts.length === 1 && contentParts[0].type === "text") {
-            return { role: msg.role, content: contentParts[0].text };
-          }
-          return { role: msg.role, content: contentParts };
-        }) as ChatCompletionMessageParam[];
-
-        return this._executeStream(model, legacyMessages, callback);
+        toast.warning(
+          i18n.t("ai-client.openai.web-search-not-supported", {
+            ns: "commons",
+            model,
+          }),
+        );
+        return this._executeResponsesStream(model, messages, callback, {
+          onlineSearch: false,
+        });
       }
       throw err;
     }

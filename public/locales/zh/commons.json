@@ -678,7 +678,8 @@
   "ai-client": {
     "openai": {
       "requires-response-api-online-search": "使用联网搜索功能需要开启 Responses API 设置",
-      "requires-response-api-pdf": "使用 PDF 识别功能需要开启 Responses API 设置"
+      "requires-response-api-pdf": "使用 PDF 识别功能需要开启 Responses API 设置",
+      "web-search-not-supported": "模型 {{model}} 不支持联网搜索，已自动禁用该功能继续处理"
     }
   }
 }
