@@ -145,7 +145,7 @@ export const useSettingsStore = create<SettingsState>()(
         keybindings: state.keybindings,
         traits: state.traits,
         explanationMode: state.explanationMode,
-        devtools: state.devtoolsEnabled,
+        devtoolsEnabled: state.devtoolsEnabled,
         clearDialogOnSubmit: state.clearDialogOnSubmit,
         onlineSearchEnabled: state.onlineSearchEnabled,
         showModelSelectorInScanner: state.showModelSelectorInScanner,

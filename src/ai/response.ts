@@ -149,14 +149,15 @@ export function parseSolveResponse(response: string): SolveResponse {
       : undefined;
 
     if (problemText || explanation || answer || hasOnlineSearch) {
+      const finalExplanation =
+        explanation || (hasOnlineSearch ? "See search results below." : "");
       problems.push({
         problem:
           problemText || (hasOnlineSearch ? "Online Search Results" : ""),
-        explanation:
-          explanation || (hasOnlineSearch ? "See search results below." : ""),
+        explanation: finalExplanation,
         answer: answer || "",
         // Parse steps specifically from the explanation text
-        steps: MarkdownSectionParser.parseSteps(explanation),
+        steps: MarkdownSectionParser.parseSteps(finalExplanation),
         onlineSearch,
       });
     } else if (chunk.trim()) {
