@@ -17,7 +17,6 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import { cn } from "@/lib/utils";
 import { useShortcut } from "@/hooks/use-shortcut";
 import { ShortcutHint } from "../ShortcutHint";
-import { useNativeCamera } from "@/hooks/use-native-camera";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -57,7 +56,6 @@ export default function UploadArea({ appendFiles, allowPdf }: UploadAreaProps) {
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const uploadBtnRef = useRef<HTMLButtonElement | null>(null);
-  const cameraBtnRef = useRef<HTMLButtonElement | null>(null);
 
   const handleTextInput = useCallback(
     (text: string) => {
@@ -74,22 +72,6 @@ export default function UploadArea({ appendFiles, allowPdf }: UploadAreaProps) {
     uploadInputRef.current?.click();
   }, [isWorking, adbBusy]);
 
-  const { isNative, capture } = useNativeCamera();
-  const runCameraFlow = useCallback(async () => {
-    if (isWorking || adbBusy) return;
-    if (isNative) {
-      const files = await capture();
-      if (files.length) {
-        appendFiles(files, "camera");
-        return;
-      }
-    }
-    cameraInputRef.current?.click();
-  }, [appendFiles, capture, isNative, isWorking, adbBusy]);
-
-  const handleCameraBtnClicked = useCallback(() => {
-    void runCameraFlow();
-  }, [runCameraFlow]);
 
   useEffect(() => {
     let cancelled = false;
@@ -263,23 +245,6 @@ export default function UploadArea({ appendFiles, allowPdf }: UploadAreaProps) {
             e.currentTarget.value = "";
           }}
         />
-        {/* <Button */}
-        {/*   ref={cameraBtnRef} */}
-        {/*   variant="secondary" */}
-        {/*   className={cn( */}
-        {/*     "flex-1 items-center justify-between min-w-0 shrink", */}
-        {/*     isCompact && "py-6 text-base font-medium", */}
-        {/*   )} */}
-        {/*   size={isCompact ? "lg" : "default"} */}
-        {/*   disabled={isWorking || adbBusy} */}
-        {/*   onClick={handleCameraBtnClicked} */}
-        {/* > */}
-        {/*   <span className="flex items-center gap-2 min-w-0 overflow-hidden"> */}
-        {/*     <Camera className="h-5 w-5 shrink-0" /> */}
-        {/*     <span className="truncate">{t("take-photo")}</span> */}
-        {/*   </span> */}
-        {/*   <ShortcutHint shortcut={cameraShortcut} /> */}
-        {/* </Button> */}
         <TextInputDialog
           isOpen={textInputOpen}
           onOpenChange={setTextInputOpen}
@@ -292,7 +257,7 @@ export default function UploadArea({ appendFiles, allowPdf }: UploadAreaProps) {
             <Button
               variant="secondary"
               className={cn(
-                "flex-1 items-center justify-between min-w-0 flex-shrink",
+                "flex-1 items-center justify-between min-w-0 shrink",
                 isCompact && "py-6 text-base font-medium mt-2",
               )}
               size={isCompact ? "lg" : "default"}
@@ -300,7 +265,7 @@ export default function UploadArea({ appendFiles, allowPdf }: UploadAreaProps) {
               onClick={() => setTextInputOpen(true)}
             >
               <span className="flex items-center gap-2 min-w-0 overflow-hidden">
-                <FileText className="h-5 w-5 flex-shrink-0" />
+                <FileText className="h-5 w-5 shrink-0" />
                 <span className="truncate">{t("text-input.button")}</span>
               </span>
               <ShortcutHint shortcut={textInputShortcut} />
@@ -324,7 +289,7 @@ export default function UploadArea({ appendFiles, allowPdf }: UploadAreaProps) {
                 alt="ADB"
                 width={18}
                 height={18}
-                className="h-[18px] w-[18px]"
+                className="h-4.5 w-4.5"
               />
               <span className="truncate">
                 {adbBusy
