@@ -48,8 +48,11 @@ export default function ImportSettingsPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   const sourceId = useRef<null | string>(null);
+  const previousModel = useRef<string | null>(null);
 
-  const { addSource, removeSource, setCurrentModel } = useAiStore((s) => s);
+  const { addSource, removeSource, setCurrentModel, currentModel } = useAiStore(
+    (s) => s
+  );
 
   useEffect(() => {
     // 1. Get the hash from the URL
@@ -86,6 +89,7 @@ export default function ImportSettingsPage() {
 
     // If the imported config has a model, set it as the current model
     if (modelJson.model) {
+      previousModel.current = currentModel;
       setCurrentModel(modelJson.model);
     }
 
@@ -103,6 +107,12 @@ export default function ImportSettingsPage() {
     if (!sourceId.current) return;
 
     removeSource(sourceId.current);
+
+    // Restore the previous model if it was changed during import
+    if (previousModel.current !== null) {
+      setCurrentModel(previousModel.current);
+      previousModel.current = null;
+    }
 
     setIsImported(false);
   };

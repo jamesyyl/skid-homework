@@ -333,12 +333,9 @@ export const useAiStore = create<AiStore>()(
         activeSourceId: state.activeSourceId,
         fallbackModel: state.fallbackModel,
         currentModel: state.currentModel,
-        isCustomModel: state.isCustomModel,
-        isCustomFallback: state.isCustomFallback,
-        customModelName: state.customModelName,
-        customModelSourceId: state.customModelSourceId,
-        customFallbackName: state.customFallbackName,
-        customFallbackSourceId: state.customFallbackSourceId,
+        // Note: isCustomModel, isCustomFallback, customModelName, customModelSourceId,
+        // customFallbackName, and customFallbackSourceId are intentionally NOT persisted
+        // as they are transient UI state for in-progress custom model configuration.
       }),
       version: 4,
       migrate: (persistedState, version) => {

@@ -3,7 +3,9 @@
 import { useState } from "react";
 import { useAiStore } from "@/store/ai-store";
 import { useAvailableModels } from "@/hooks/use-available-models";
-import ModelSelector from "@/components/ui/ModelSelector";
+import ModelSelector, {
+  CUSTOM_MODEL_VALUE,
+} from "@/components/ui/ModelSelector";
 
 export default function ModelSelectorPopover() {
   const currentModel = useAiStore((s) => s.currentModel);
@@ -15,7 +17,7 @@ export default function ModelSelectorPopover() {
   const [open, setOpen] = useState(false);
 
   const handleModelSelect = (model: string) => {
-    if (model === "__custom__") {
+    if (model === CUSTOM_MODEL_VALUE) {
       setIsCustomModel(true);
     } else {
       setIsCustomModel(false);

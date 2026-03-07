@@ -213,64 +213,30 @@ export default function ScanPage() {
     maxRetries: number = 5,
     initialDelayMs: number = 5000
   ): Promise<string> => {
-    let lastError: Error | undefined;
-    let delay = initialDelayMs;
+    // Helper function to run a single model's retry loop
+    const runWithRetry = async (
+      model: string,
+      logPrefix: string
+    ): Promise<{ result: string } | { error: Error }> => {
+      let lastError: Error | undefined;
+      let delay = initialDelayMs;
 
-    // Try with primary model first
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        return await asyncFn(primaryModel);
-      } catch (error) {
-        lastError = error as Error;
-
-        if (isNonRetryableError(error)) {
-          throw error;
-        }
-
-        const errorMessage = lastError?.message || String(error);
-        console.log(
-          `Attempt ${attempt} with primary model failed. Retrying in ${delay / 1000}s...`
-        );
-
-        if (attempt < maxRetries) {
-          toast.warning(t("toasts.retry.title"), {
-            description: t("toasts.retry.description", {
-              attempt,
-              error: errorMessage.slice(0, 100),
-              delay: Math.round(delay / 1000),
-            }),
-          });
-          await new Promise((resolve) => setTimeout(resolve, delay));
-          delay *= 2;
-        }
-      }
-    }
-
-    // Primary model exhausted, try fallback model if available
-    if (fallbackModelName) {
-      toast.info(t("toasts.fallback.title"), {
-        description: t("toasts.fallback.description", {
-          model: fallbackModelName,
-        }),
-      });
-
-      delay = initialDelayMs;
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      for (let attempt = 1; attempt <= Math.max(1, maxRetries); attempt++) {
         try {
-          return await asyncFn(fallbackModelName);
+          return { result: await asyncFn(model) };
         } catch (error) {
           lastError = error as Error;
 
           if (isNonRetryableError(error)) {
-            throw error;
+            return { error: lastError };
           }
 
           const errorMessage = lastError?.message || String(error);
           console.log(
-            `Fallback attempt ${attempt} failed. Retrying in ${delay / 1000}s...`
+            `${logPrefix} attempt ${attempt} failed. Retrying in ${delay / 1000}s...`
           );
 
-          if (attempt < maxRetries) {
+          if (attempt < Math.max(1, maxRetries)) {
             toast.warning(t("toasts.retry.title"), {
               description: t("toasts.retry.description", {
                 attempt,
@@ -282,6 +248,38 @@ export default function ScanPage() {
             delay *= 2;
           }
         }
+      }
+
+      return { error: lastError ?? new Error("Unknown AI failure") };
+    };
+
+    // Try with primary model first
+    const primaryResult = await runWithRetry(primaryModel, "Primary model");
+    if ("result" in primaryResult) {
+      return primaryResult.result;
+    }
+
+    // Check if primary error is non-retryable
+    if (isNonRetryableError(primaryResult.error)) {
+      throw primaryResult.error;
+    }
+
+    // Primary model exhausted, try fallback model if available
+    if (fallbackModelName) {
+      toast.info(t("toasts.fallback.title"), {
+        description: t("toasts.fallback.description", {
+          model: fallbackModelName,
+        }),
+      });
+
+      const fallbackResult = await runWithRetry(fallbackModelName, "Fallback");
+      if ("result" in fallbackResult) {
+        return fallbackResult.result;
+      }
+
+      // Check if fallback error is non-retryable
+      if (isNonRetryableError(fallbackResult.error)) {
+        throw fallbackResult.error;
       }
     }
 
@@ -295,7 +293,7 @@ export default function ScanPage() {
       });
     }
 
-    throw lastError ?? new Error("Unknown AI failure");
+    throw primaryResult.error;
   };
 
   /**
