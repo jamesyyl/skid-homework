@@ -273,6 +273,10 @@ interface Resources {
           description: "处理过程中出了点问题，请查看控制台。";
           title: "发生意外错误";
         };
+        fallback: {
+          description: "主模型请求失败，正在使用回落模型 {{model}} 重试...";
+          title: "正在切换到回落模型";
+        };
         "no-key": {
           description: "请在设置中为 {{provider}} 填写 API 密钥。";
           title: "还差一步";
@@ -298,12 +302,8 @@ interface Resources {
           title: "请求失败，正在重试";
         };
         "retry-exhausted": {
-          description: "{{source}} 的所有 {{maxRetries}} 次重试均失败，正在切换到下一个提供商...";
+          description: "{{source}} 的所有 {{maxRetries}} 次重试均失败";
           title: "重试次数已用尽";
-        };
-        fallback: {
-          description: "主模型请求失败，正在使用回落模型 {{model}} 重试...";
-          title: "正在切换到回落模型";
         };
         "unsupported-file": {
           description: "您的文件MIME 类型为 {{mimeType}}, 当前不被 SkidHomework 支持";
@@ -541,11 +541,11 @@ interface Resources {
         "online-search": {
           desc: "在需要时允许助手调用联网搜索工具。";
           "show-toggle-in-scanner": "在扫描界面显示联网搜索按钮以快速切换";
-          title: "联网搜索";
+          title: "联网搜索设置";
           toggle: {
             disabled: "开启联网搜索";
             enabled: "已开启联网搜索";
-            settings: "Online search";
+            settings: "联网搜索";
           };
         };
         title: "思考参数";
