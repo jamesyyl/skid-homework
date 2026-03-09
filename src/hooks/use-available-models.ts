@@ -1,9 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  type AiModelSummary,
-  type AiSource,
-  useAiStore,
-} from "@/store/ai-store";
+import { type AiModelSummary, type AiSource, useAiStore, } from "@/store/ai-store";
 
 export interface SourceModels {
   source: AiSource;
@@ -28,12 +24,36 @@ interface CachedModels {
   sourcesHash: string;
 }
 
-// Generate hash from enabled sources to detect API key changes
-function generateSourcesHash(sources: AiSource[]): string {
-  return sources
+// Generate a one-way hash from enabled sources to detect config changes
+// Uses SHA-256 to avoid storing API keys in localStorage
+async function generateSourcesHashAsync(sources: AiSource[]): Promise<string> {
+  const input = sources
     .map((s) => `${s.id}:${s.apiKey ?? ""}:${s.baseUrl ?? ""}`)
     .sort()
     .join("|");
+
+  const encoder = new TextEncoder();
+  const data = encoder.encode(input);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Synchronous version for initial render (uses simple hash, not persisted)
+function generateSourcesHashSync(sources: AiSource[]): string {
+  const input = sources
+    .map((s) => `${s.id}:${s.apiKey ?? ""}:${s.baseUrl ?? ""}`)
+    .sort()
+    .join("|");
+
+  // Simple hash for in-memory comparison only (not persisted)
+  let hash = 0;
+  for (let i = 0; i < input.length; i++) {
+    const char = input.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash = hash & hash;
+  }
+  return hash.toString(36);
 }
 
 // Read cache from localStorage
@@ -114,13 +134,27 @@ export function useAvailableModels() {
 
   const [sourceModelsMap, setSourceModelsMap] = useState<SourceModels[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [sourcesHash, setSourcesHash] = useState<string>("");
 
-  // Track sources hash to detect API key changes
-  const sourcesHash = useMemo(
-    () => generateSourcesHash(enabledSources),
+  // Track sources hash to detect API key changes (sync version for comparisons)
+  const sourcesHashSync = useMemo(
+    () => generateSourcesHashSync(enabledSources),
     [enabledSources]
   );
   const prevSourcesHashRef = useRef<string | null>(null);
+
+  // Compute async hash for cache storage (only when sources change)
+  useEffect(() => {
+    let cancelled = false;
+    generateSourcesHashAsync(enabledSources).then((hash) => {
+      if (!cancelled) {
+        setSourcesHash(hash);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [enabledSources]);
 
   // Ref to track if component is mounted (for forceRefetch cancellation)
   const isMountedRef = useRef(true);
@@ -149,17 +183,19 @@ export function useAvailableModels() {
     }
 
     if (isMountedRef.current) {
-      writeCache(toCacheFormat(results), sourcesHash);
+      // Compute fresh hash for cache
+      const hash = await generateSourcesHashAsync(enabledSources);
+      writeCache(toCacheFormat(results), hash);
       setSourceModelsMap(results);
       setIsLoading(false);
     }
-  }, [enabledSources, getClientForSource, sourcesHash]);
+  }, [enabledSources, getClientForSource]);
 
   // Regular fetch with cache support
   const fetchModels = useCallback(
     async (forceRefresh = false) => {
       // Check cache first (unless force refresh)
-      if (!forceRefresh) {
+      if (!forceRefresh && sourcesHash) {
         const cache = readCache();
         const now = Date.now();
 
@@ -185,24 +221,27 @@ export function useAvailableModels() {
     let cancelled = false;
 
     const doFetch = async () => {
-      // Detect if sources changed (API key modified)
+      // Detect if sources changed (API key modified) using sync hash for in-memory comparison
       const sourcesChanged =
         prevSourcesHashRef.current !== null &&
-        prevSourcesHashRef.current !== sourcesHash;
-      prevSourcesHashRef.current = sourcesHash;
+        prevSourcesHashRef.current !== sourcesHashSync;
+      prevSourcesHashRef.current = sourcesHashSync;
 
       // If sources changed, clear cache and force refresh
       if (sourcesChanged) {
         clearCache();
       }
 
-      // Check cache first
+      // Check cache first (need async hash for cache comparison)
+      const asyncHash = await generateSourcesHashAsync(enabledSources);
+      if (cancelled) return;
+
       const cache = readCache();
       const now = Date.now();
 
       if (cache && !sourcesChanged) {
         const isExpired = now - cache.timestamp > CACHE_DURATION_MS;
-        const cacheSourcesChanged = cache.sourcesHash !== sourcesHash;
+        const cacheSourcesChanged = cache.sourcesHash !== asyncHash;
 
         if (!isExpired && !cacheSourcesChanged) {
           // Use cached data (hydrate with current sources)
@@ -230,7 +269,7 @@ export function useAvailableModels() {
       }
 
       if (!cancelled) {
-        writeCache(toCacheFormat(results), sourcesHash);
+        writeCache(toCacheFormat(results), asyncHash);
         setSourceModelsMap(results);
         setIsLoading(false);
       }
@@ -241,7 +280,7 @@ export function useAvailableModels() {
     return () => {
       cancelled = true;
     };
-  }, [enabledSources, getClientForSource, sourcesHash, sources]);
+  }, [enabledSources, getClientForSource, sourcesHashSync, sources]);
 
   // Flatten all models for simple list access
   const allModels = useMemo(() => {
