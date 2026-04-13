@@ -1,4 +1,5 @@
-import type { ProblemSolution } from "@/store/problems-store";
+import { lexer, type Token } from "marked";
+import type { ExplanationStep, ProblemSolution } from "@/store/problems-store";
 
 // SECTION: Type Definitions
 
@@ -9,151 +10,209 @@ export interface SolveResponse {
 export interface ImproveResponse {
   improved_answer: string;
   improved_explanation: string;
+  improved_steps: ExplanationStep[];
+  onlineSearch?: string;
 }
 
-// SECTION: Shared Utilities
+// SECTION: Core Logic (Using 'marked' AST/Lexer)
 
 /**
- * Trims markdown code fences (e.g., ```xml) from a string.
- * @param content The string which may be wrapped in a markdown code block.
- * @returns The unwrapped, trimmed content.
+ * Helper class to parse markdown structures using AST tokens instead of Regex.
  */
-function trimMarkdownFence(content: string): string {
-  const regex = /^```(?:\w+\s*)?\n?([\s\S]*)\n?```$/;
-  const match = content.trim().match(regex);
+class MarkdownSectionParser {
+  private tokens: Token[];
 
-  return match ? match[1].trim() : content.trim();
-}
+  constructor(markdown: string) {
+    // 1. Clean up fence wrappers if present
+    const cleanMarkdown = this.trimMarkdownFence(markdown);
+    // 2. Tokenize the markdown string
+    this.tokens = lexer(cleanMarkdown);
+  }
 
-/**
- * Parses an XML string using the browser's DOMParser and checks for parsing errors.
- * @param xmlString The XML string to parse.
- * @returns The parsed XMLDocument or null if an error occurs.
- */
-function parseXmlString(xmlString: string): Document | null {
-  try {
-    const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(xmlString, "application/xml");
-    const parseError = xmlDoc.getElementsByTagName("parsererror");
-    if (parseError.length > 0) {
-      // Access the first error element to get its content.
-      console.error("Failed to parse XML: ", parseError);
-      return null;
+  /**
+   * Remove ```text ... ``` wrappers
+   */
+  private trimMarkdownFence(content: string): string {
+    const regex = /^```(?:\w+\s*)?\n?([\s\S]*)\n?```$/;
+    const match = content.trim().match(regex);
+    return match ? match[1].trim() : content.trim();
+  }
+
+  /**
+   * Extracts content grouped by H3 headers (### KEY).
+   * Example: ### PROBLEM_TEXT -> content
+   */
+  public getSectionsByH3(): Record<string, string> {
+    const sections: Record<string, string> = {};
+    let currentKey: string | null = null;
+
+    for (const token of this.tokens) {
+      if (token.type === "heading" && token.depth === 3) {
+        // Found a Header (e.g., "### ANSWER")
+        // Normalize key: remove formatting, trim
+        currentKey = token.text.trim();
+        if (!currentKey) continue;
+        sections[currentKey] = "";
+      } else if (currentKey) {
+        // Append raw content to the current section
+        // token.raw preserves original formatting (newlines, lists, etc.)
+        sections[currentKey] += token.raw;
+      }
     }
-    return xmlDoc;
-  } catch (e) {
-    console.error(
-      "An unexpected error occurred during XML parsing:",
-      e,
-      xmlString,
+
+    // Trim whitespace from all extracted values
+    for (const key in sections) {
+      sections[key] = sections[key].trim();
+    }
+
+    return sections;
+  }
+
+  /**
+   * Static helper to parse steps from a specific explanation string.
+   * Looks for H4 headers (#### Step X) to split content.
+   */
+  public static parseSteps(explanationText: string): ExplanationStep[] {
+    if (!explanationText) return [];
+
+    const tokens = lexer(explanationText);
+    const steps: ExplanationStep[] = [];
+    let currentStep: ExplanationStep | null = null;
+
+    for (const token of tokens) {
+      // Check for H4 Header (#### Step ...)
+      if (token.type === "heading" && token.depth === 4) {
+        // Save previous step if exists
+        if (currentStep) {
+          steps.push(currentStep);
+        }
+
+        // Start new step
+        currentStep = {
+          title: token.text.trim(), // e.g., "Step 1: Analysis"
+          content: "",
+        };
+      } else if (currentStep) {
+        // Append to current step
+        currentStep.content += token.raw;
+      }
+    }
+
+    // Push the last step
+    if (currentStep) {
+      steps.push(currentStep);
+    }
+
+    // Clean up contents
+    steps.forEach((s) => (s.content = s.content.trim()));
+
+    // Fallback: If no H4 steps were found, treat whole text as one step
+    if (steps.length === 0 && explanationText.trim()) {
+      return [
+        {
+          title: "Detailed Explanation",
+          content: explanationText.trim(),
+        },
+      ];
+    }
+
+    return steps;
+  }
+}
+
+// SECTION: Solve Response Parsing
+
+export function parseSolveResponse(response: string): SolveResponse {
+  // 1. The input might contain multiple problems separated by a distinct string.
+  // Regex is still fine for this high-level split as it's a specific delimiter,
+  // or simple string split.
+  const rawChunks = response.split("---PROBLEM_SEPARATOR---");
+  const problems: ProblemSolution[] = [];
+
+  for (const chunk of rawChunks) {
+    if (!chunk.trim()) continue;
+
+    // Use Marked to parse this chunk
+    const parser = new MarkdownSectionParser(chunk);
+    const sections = parser.getSectionsByH3();
+
+    // Map known keys to our interface
+    // Note: Keys match the token.text (e.g., "PROBLEM_TEXT")
+    const problemText = sections["PROBLEM_TEXT"] || "";
+    const explanation = sections["EXPLANATION"] || "";
+    const answer = sections["ANSWER"] || "";
+    const hasOnlineSearch = Object.prototype.hasOwnProperty.call(
+      sections,
+      "ONLINE_SEARCH"
     );
-    return null;
-  }
-}
+    const onlineSearch = hasOnlineSearch
+      ? sections["ONLINE_SEARCH"]
+      : undefined;
 
-/**
- * Safely gets text content from the first child element with a given tag name.
- * @param node The parent XML element.
- * @param tagName The tag name of the child element to find.
- * @returns The text content or an empty string if the element is not found.
- */
-function getXmlTextContent(node: Element, tagName: string): string {
-  const elements = node.getElementsByTagName(tagName);
-  // Correctly access the FIRST element in the collection (at index 0)
-  // before getting its textContent. If no element is found, it will be undefined.
-  return elements[0]?.textContent ?? "";
-}
-
-// SECTION: Solve Response Parsing (Refactored)
-
-/**
- * Helper function to parse an XML string into a SolveResponse object.
- * @param xmlString The XML string to parse.
- * @returns A SolveResponse object if parsing is successful, otherwise null.
- */
-function parseXmlToSolveResponse(xmlString: string): SolveResponse | null {
-  const xmlDoc = parseXmlString(xmlString);
-  if (!xmlDoc) {
-    return null;
+    if (problemText || explanation || answer || hasOnlineSearch) {
+      const finalExplanation = explanation || "";
+      problems.push({
+        problem: problemText || "",
+        explanation: finalExplanation,
+        answer: answer || "",
+        // Parse steps specifically from the explanation text
+        steps: MarkdownSectionParser.parseSteps(finalExplanation),
+        onlineSearch,
+      });
+    } else if (chunk.trim()) {
+      // Fallback: If the chunk has content but no headers (and no online search section found via headers)
+      // We treat the whole chunk as the explanation.
+      problems.push({
+        problem: "Parsed Content",
+        explanation: chunk.trim(),
+        answer: "",
+        steps: MarkdownSectionParser.parseSteps(chunk.trim()),
+        onlineSearch: undefined,
+      });
+    }
   }
 
-  const problemNodes = Array.from(xmlDoc.getElementsByTagName("problem"));
-  const problems: ProblemSolution[] = problemNodes.map((node) => ({
-    problem: getXmlTextContent(node, "problem_text"),
-    answer: getXmlTextContent(node, "answer"),
-    explanation: getXmlTextContent(node, "explanation"),
-  }));
+  // Fallback for completely failed parsing
+  if (problems.length === 0 && response.trim()) {
+    return {
+      problems: [
+        {
+          problem: "Error parsing problem text",
+          answer: "",
+          explanation: response,
+          steps: [{ title: "Error", content: response }],
+          onlineSearch: undefined,
+        },
+      ],
+    };
+  }
 
   return { problems };
 }
 
-/**
- * Parses a string response from the AI for a "solve" request.
- * It handles JSON or XML, either raw or wrapped in a markdown code block.
- * @param response The raw string response from the AI.
- * @returns A SolveResponse object if parsing is successful, otherwise null.
- */
-export function parseSolveResponse(response: string): SolveResponse | null {
-  const content = trimMarkdownFence(response);
+// SECTION: Improve Response Parsing
 
-  if (content.startsWith("{")) {
-    try {
-      return JSON.parse(content) as SolveResponse;
-    } catch (e) {
-      console.error("Failed to parse JSON:", e, content);
-      throw e;
-    }
-  }
+export function parseImproveResponse(response: string): ImproveResponse | null {
+  const parser = new MarkdownSectionParser(response);
+  const sections = parser.getSectionsByH3();
 
-  if (content.startsWith("<")) {
-    return parseXmlToSolveResponse(content);
-  }
+  const improvedExplanation = sections["IMPROVED_EXPLANATION"];
+  const improvedAnswer = sections["IMPROVED_ANSWER"];
+  const hasOnlineSearch = Object.prototype.hasOwnProperty.call(
+    sections,
+    "ONLINE_SEARCH"
+  );
+  const onlineSearch = hasOnlineSearch ? sections["ONLINE_SEARCH"] : undefined;
 
-  console.error("Failed to parse response due to unknown format:", response);
-  throw Error(`Failed to parse response due to unknown format:\n${response}`);
-}
-
-// SECTION: Improve Response Parsing (New)
-
-/**
- * Helper function to parse an XML string into an ImproveResponse object.
- * @param xmlString The XML string to parse.
- * @returns An ImproveResponse object if parsing is successful, otherwise null.
- */
-function parseXmlToImproveResponse(xmlString: string): ImproveResponse | null {
-  const xmlDoc = parseXmlString(xmlString);
-  if (!xmlDoc) {
-    return null;
-  }
-
-  const solutionNode = xmlDoc.getElementsByTagName("solution").item(0);
-  if (!solutionNode) {
-    console.error("Root <solution> tag not found in XML response.");
+  if (!improvedExplanation && !improvedAnswer) {
+    console.error("Failed to parse Improve Response keys.");
     return null;
   }
 
   return {
-    improved_answer: getXmlTextContent(solutionNode, "improved_answer"),
-    improved_explanation: getXmlTextContent(
-      solutionNode,
-      "improved_explanation",
-    ),
+    improved_answer: improvedAnswer || "",
+    improved_explanation: improvedExplanation || "",
+    improved_steps: MarkdownSectionParser.parseSteps(improvedExplanation || ""),
+    onlineSearch,
   };
-}
-
-/**
- * Parses a string response from the AI for an "improve" request.
- * The expected format is XML, either raw or wrapped in a markdown code block.
- * @param response The raw string response from the AI.
- * @returns An ImproveResponse object if parsing is successful, otherwise null.
- */
-export function parseImproveResponse(response: string): ImproveResponse | null {
-  const content = trimMarkdownFence(response);
-
-  if (content.startsWith("<")) {
-    return parseXmlToImproveResponse(content);
-  }
-
-  console.error("Failed to parse response: XML format expected.", response);
-  return null;
 }

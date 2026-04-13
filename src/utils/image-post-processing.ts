@@ -1,112 +1,129 @@
 /**
- * Processes an image file to create a "scanned document" effect.
- * The process involves converting the image to grayscale and increasing its contrast.
- * @param imageFile The original image file to process.
- * @param type The desired output MIME type, e.g., 'image/png' or 'image/jpeg'.
- * @param quality For JPEG output, the quality level (0-1).
- * @returns A promise that resolves with the processed File object and its Object URL.
+ * Processes an image using OpenCV.js to create a clean, high-contrast document.
+ *
+ * @param imageFile The original image file
+ * @returns Promise with the processed File and Object URL
  */
-export const binarizeImageFile = async (
+export const processImage = async (
   imageFile: File,
-  type: "image/png" | "image/jpeg" = "image/png",
-  quality?: number,
 ): Promise<{ file: File; url: string }> => {
   return new Promise((resolve, reject) => {
-    // 1. Setup: Create canvas and load the image
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d", {
-      // Opt-in to a non-alpha canvas for potential performance improvement
-      // as we don't need transparency for a scanned document effect.
-      alpha: false,
-    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cv = (window as any).cv;
 
-    if (!ctx) {
-      return reject(new Error("Failed to get Canvas context"));
+    if (!cv) {
+      reject(new Error("OpenCV.js is not loaded"));
+      return;
     }
 
-    const img = new Image();
-    const originalUrl = URL.createObjectURL(imageFile);
-
-    img.onload = () => {
-      // 2. Initial Draw: Set canvas dimensions and draw the original image
-      canvas.width = img.width;
-      canvas.height = img.height;
-      ctx.drawImage(img, 0, 0);
-
-      // Immediately revoke the object URL to free up memory
-      URL.revokeObjectURL(originalUrl);
-
-      // 3. Pixel Manipulation: Get the image data to apply filters
-      try {
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const data = imageData.data; // This is a Uint8ClampedArray: [R, G, B, A, R, G, B, A, ...]
-
-        // Loop through every pixel (4 bytes at a time: R, G, B, A)
-        for (let i = 0; i < data.length; i += 4) {
-          const r = data[i];
-          const g = data[i + 1];
-          const b = data[i + 2];
-
-          // Step A: Convert to grayscale using the luminosity method (standard formula)
-          // This weights colors according to human perception.
-          const grayscale = 0.299 * r + 0.587 * g + 0.114 * b;
-
-          // Step B: Increase contrast.
-          // We'll use a simple threshold. If the gray value is above a certain point,
-          // make it pure white (255). Otherwise, make it pure black (0).
-          // You can adjust the threshold to get the best result for your documents.
-          // A value around 128 is a neutral starting point. A higher value makes more pixels black.
-          const threshold = 150; // Tweak this value (100-180) for best results
-          const contrastValue = grayscale > threshold ? 255 : 0;
-
-          // Set the new RGB values for the pixel. All are set to the same
-          // value to maintain the grayscale (or in this case, black and white) effect.
-          data[i] = contrastValue; // Red channel
-          data[i + 1] = contrastValue; // Green channel
-          data[i + 2] = contrastValue; // Blue channel
-          // Alpha channel (data[i + 3]) is left untouched.
-        }
-
-        // 4. Put the modified pixel data back onto the canvas
-        ctx.putImageData(imageData, 0, 0);
-      } catch (error) {
-        // This can happen if the image is from a different origin (CORS issue)
-        // and the canvas becomes "tainted".
-        console.error("Could not process pixel data:", error);
-        return reject(
-          new Error(
-            "Failed to process image pixels. Check for CORS issues if loading cross-origin images.",
-          ),
-        );
+    const waitForOpenCV = () => {
+      if (cv.Mat) {
+        run();
+      } else {
+        setTimeout(waitForOpenCV, 30);
       }
+    };
 
-      // 5. Export: Convert the canvas content back to a Blob, then a File
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) {
-            return reject(new Error("Failed to create Blob from canvas"));
-          }
+    const run = () => {
+      const img = new Image();
+      const originalUrl = URL.createObjectURL(imageFile);
 
-          // Create a new filename for the processed file
-          const fileName = `scanned_${imageFile.name.split(".")[0] || "document"}.png`;
-          const newFile = new File([blob], fileName, { type });
-          const newUrl = URL.createObjectURL(newFile);
+      img.onload = () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let src: any = null;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let dst: any = null;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let bg: any = null;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let kernelBig: any = null;
+        // Note: kernelSmall is removed as it destroys digital text details
 
-          // Resolve the promise with the new file and its URL
-          resolve({ file: newFile, url: newUrl });
-        },
-        type,
-        quality,
+        try {
+          src = cv.imread(img);
+          dst = new cv.Mat();
+          bg = new cv.Mat();
+
+          // 1. Convert to Grayscale
+          cv.cvtColor(src, src, cv.COLOR_RGBA2GRAY);
+
+          // 2. Shadow Removal / Illumination Correction
+          // Even for electronic docs, this helps normalize off-white backgrounds to pure white.
+          kernelBig = cv.getStructuringElement(
+            cv.MORPH_RECT,
+            new cv.Size(50, 50),
+          );
+
+          // Estimate background
+          cv.morphologyEx(src, bg, cv.MORPH_CLOSE, kernelBig);
+
+          // Divide source by background to flatten illumination
+          // dst = (src / bg) * 255
+          cv.divide(src, bg, dst, 255, -1);
+
+          // 4. Binarization (Thresholding)
+          // For electronic documents (uniform lighting), Otsu's method works best.
+          // It automatically finds the best separation between text and background.
+
+          // Use THRESH_OTSU + THRESH_BINARY.
+          // Note: When using OTSU, the explicit threshold value (0) is ignored.
+          cv.threshold(dst, dst, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU);
+
+          // OPTIONAL: If you still need Adaptive Threshold (e.g., for mixed camera scans),
+          // increase the Block Size (15 -> 31 or 41) to prevent letters from becoming hollow.
+          /*
+      cv.adaptiveThreshold(
+        dst, dst, 255,
+        cv.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv.THRESH_BINARY,
+        31, // Increased block size for better text preservation
+        15  // Increased constant
       );
+      */
+
+          const outputCanvas = document.createElement("canvas");
+          cv.imshow(outputCanvas, dst);
+
+          outputCanvas.toBlob(
+            (blob) => {
+              if (!blob) {
+                reject(new Error("Canvas encoding failed"));
+                return;
+              }
+
+              const file = new File([blob], `enhanced_${imageFile.name}.png`, {
+                type: "image/png",
+              });
+
+              resolve({
+                file,
+                url: URL.createObjectURL(file),
+              });
+            },
+            "image/png",
+            1,
+          );
+        } catch (err) {
+          reject(err);
+        } finally {
+          // Clean up memory
+          if (src) src.delete();
+          if (dst) dst.delete();
+          if (bg) bg.delete();
+          if (kernelBig) kernelBig.delete();
+          // kernelSmall was removed
+          URL.revokeObjectURL(originalUrl);
+        }
+      };
+
+      img.onerror = () => {
+        URL.revokeObjectURL(originalUrl);
+        reject(new Error("Image load failed"));
+      };
+
+      img.src = originalUrl;
     };
 
-    img.onerror = (err) => {
-      // Clean up the URL if image loading fails
-      URL.revokeObjectURL(originalUrl);
-      reject(err);
-    };
-
-    // Start the loading process
-    img.src = originalUrl;
+    waitForOpenCV();
   });
 };

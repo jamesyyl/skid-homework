@@ -1,4 +1,5 @@
 import { GeminiAi } from "@/ai/gemini";
+import { v4 as uuidv4 } from "uuid";
 import { OpenAiClient } from "@/ai/openai";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
@@ -17,28 +18,51 @@ export interface AiSource {
   provider: AiProvider;
   apiKey: string | null;
   baseUrl?: string;
-  model: string;
   traits?: string;
   thinkingBudget?: number;
+  useResponsesApi?: boolean;
+  webSearchToolType?: string;
+  maxRetries?: number;
   enabled: boolean;
-  pollIntervalMs?: number;
-  maxPollMs?: number;
+}
+
+export function sourceSupportsFileUpload(source: AiSource): boolean {
+  return (
+    source.provider === "gemini" ||
+    (source.provider === "openai" && !!source.useResponsesApi)
+  );
+}
+
+export type ImportAISourceModel = {
+  name: string;
+  model: string;
+  provider: AiProvider;
+  baseUrl?: string;
+  key?: string;
+};
+
+export interface AiFile {
+  data: string;
+  mimeType: string;
+  name: string;
 }
 
 export interface AiClient {
-  setSystemPrompt: (prompt: string) => void;
+  setAvailableTools: (prompts: string[]) => void;
+  addSystemPrompt: (prompt: string) => void;
   sendMedia: (
-    media: string,
-    mimeType: string,
+    file: AiFile,
     prompt?: string,
     model?: string,
     callback?: (text: string) => void,
+    options?: { onlineSearch?: boolean }
   ) => Promise<string>;
   getAvailableModels?: () => Promise<AiModelSummary[]>;
   sendChat?: (
     messages: AiChatMessage[],
     model?: string,
     callback?: (text: string) => void,
+    options?: { onlineSearch?: boolean }
   ) => Promise<string>;
 }
 
@@ -46,9 +70,12 @@ export const DEFAULT_GEMINI_MODEL = "models/gemini-2.5-flash";
 export const DEFAULT_GEMINI_BASE_URL =
   "https://generativelanguage.googleapis.com";
 export const DEFAULT_OPENAI_MODEL = "gpt-4.1-mini";
-export const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com";
+export const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 
-function loadLegacyGemini(): Partial<AiSource> | null {
+function loadLegacyGemini(): {
+  source: Partial<AiSource>;
+  model: string;
+} | null {
   if (typeof window === "undefined") return null;
   try {
     const legacyRaw = window.localStorage.getItem("gemini-storage");
@@ -65,11 +92,13 @@ function loadLegacyGemini(): Partial<AiSource> | null {
     const legacyState = parsed?.state;
     if (!legacyState) return null;
     return {
-      apiKey: legacyState.geminiKey ?? null,
-      baseUrl: legacyState.geminiBaseUrl ?? DEFAULT_GEMINI_BASE_URL,
+      source: {
+        apiKey: legacyState.geminiKey ?? null,
+        baseUrl: legacyState.geminiBaseUrl ?? DEFAULT_GEMINI_BASE_URL,
+        traits: legacyState.traits,
+        thinkingBudget: legacyState.thinkingBudget ?? 8192,
+      },
       model: legacyState.geminiModel ?? DEFAULT_GEMINI_MODEL,
-      traits: legacyState.traits,
-      thinkingBudget: legacyState.thinkingBudget ?? 8192,
     };
   } catch (error) {
     console.warn("Failed to migrate legacy Gemini configuration", error);
@@ -77,21 +106,20 @@ function loadLegacyGemini(): Partial<AiSource> | null {
   }
 }
 
+// Memoize legacy config to avoid duplicate localStorage reads during initialization
+const legacyGeminiConfig = loadLegacyGemini();
+
 function createDefaultSources(): AiSource[] {
-  const legacy = loadLegacyGemini();
   return [
     {
       id: "gemini-default",
       name: "Gemini",
       provider: "gemini",
-      apiKey: legacy?.apiKey ?? null,
-      baseUrl: legacy?.baseUrl ?? DEFAULT_GEMINI_BASE_URL,
-      model: legacy?.model ?? DEFAULT_GEMINI_MODEL,
-      traits: legacy?.traits,
-      thinkingBudget: legacy?.thinkingBudget ?? 8192,
+      apiKey: legacyGeminiConfig?.source.apiKey ?? null,
+      baseUrl: legacyGeminiConfig?.source.baseUrl ?? DEFAULT_GEMINI_BASE_URL,
+      traits: legacyGeminiConfig?.source.traits,
+      thinkingBudget: legacyGeminiConfig?.source.thinkingBudget ?? 8192,
       enabled: true,
-      pollIntervalMs: undefined,
-      maxPollMs: undefined,
     },
     {
       id: "openai-default",
@@ -99,14 +127,16 @@ function createDefaultSources(): AiSource[] {
       provider: "openai",
       apiKey: null,
       baseUrl: DEFAULT_OPENAI_BASE_URL,
-      model: DEFAULT_OPENAI_MODEL,
       traits: undefined,
       thinkingBudget: undefined,
+      useResponsesApi: true,
       enabled: false,
-      pollIntervalMs: 1_000,
-      maxPollMs: 30_000,
     },
   ];
+}
+
+function loadLegacyModel(): string {
+  return legacyGeminiConfig?.model ?? DEFAULT_GEMINI_MODEL;
 }
 
 function createClientForSource(source: AiSource): AiClient | null {
@@ -119,10 +149,12 @@ function createClientForSource(source: AiSource): AiClient | null {
   }
 
   if (source.provider === "openai") {
-    return new OpenAiClient(source.apiKey, source.baseUrl, {
-      pollIntervalMs: source.pollIntervalMs,
-      maxPollMs: source.maxPollMs,
-    });
+    return new OpenAiClient(
+      source.apiKey,
+      source.baseUrl,
+      source.useResponsesApi,
+      source.webSearchToolType
+    );
   }
 
   return null;
@@ -131,12 +163,29 @@ function createClientForSource(source: AiSource): AiClient | null {
 export interface AiStore {
   sources: AiSource[];
   activeSourceId: string;
+  fallbackModel: string | null;
+  fallbackSourceId: string | null;
+  currentModel: string;
+  isCustomModel: boolean;
+  isCustomFallback: boolean;
+  customModelName: string;
+  customModelSourceId: string;
+  customFallbackName: string;
+  customFallbackSourceId: string;
 
   addSource: (source: Omit<AiSource, "id">) => string;
   updateSource: (id: string, updates: Partial<AiSource>) => void;
   removeSource: (id: string) => void;
   toggleSource: (id: string, enabled: boolean) => void;
   setActiveSource: (id: string) => void;
+  setFallbackModel: (model: string | null, sourceId?: string | null) => void;
+  setCurrentModel: (model: string) => void;
+  setIsCustomModel: (isCustom: boolean) => void;
+  setIsCustomFallback: (isCustom: boolean) => void;
+  setCustomModelName: (name: string) => void;
+  setCustomModelSourceId: (id: string) => void;
+  setCustomFallbackName: (name: string) => void;
+  setCustomFallbackSourceId: (id: string) => void;
 
   getActiveSource: () => AiSource | null;
   getEnabledSources: () => AiSource[];
@@ -151,9 +200,18 @@ export const useAiStore = create<AiStore>()(
     (set, get) => ({
       sources: createDefaultSources(),
       activeSourceId: "gemini-default",
+      fallbackModel: null,
+      fallbackSourceId: null,
+      currentModel: loadLegacyModel(),
+      isCustomModel: false,
+      isCustomFallback: false,
+      customModelName: "",
+      customModelSourceId: "",
+      customFallbackName: "",
+      customFallbackSourceId: "",
 
       addSource: (source) => {
-        const id = crypto.randomUUID();
+        const id = uuidv4();
         set((state) => ({
           sources: [
             ...state.sources,
@@ -169,21 +227,21 @@ export const useAiStore = create<AiStore>()(
       updateSource: (id, updates) =>
         set((state) => ({
           sources: state.sources.map((source) =>
-            source.id === id ? { ...source, ...updates } : source,
+            source.id === id ? { ...source, ...updates } : source
           ),
         })),
 
       removeSource: (id) =>
         set((state) => {
           const nextSources = state.sources.filter(
-            (source) => source.id !== id,
+            (source) => source.id !== id
           );
 
           const nextActive =
             state.activeSourceId === id
-              ? nextSources.find((source) => source.enabled)?.id ??
+              ? (nextSources.find((source) => source.enabled)?.id ??
                 nextSources[0]?.id ??
-                "gemini-default"
+                "gemini-default")
               : state.activeSourceId;
 
           return {
@@ -195,7 +253,7 @@ export const useAiStore = create<AiStore>()(
       toggleSource: (id, enabled) =>
         set((state) => ({
           sources: state.sources.map((source) =>
-            source.id === id ? { ...source, enabled } : source,
+            source.id === id ? { ...source, enabled } : source
           ),
         })),
 
@@ -205,20 +263,37 @@ export const useAiStore = create<AiStore>()(
           return exists ? { activeSourceId: id } : state;
         }),
 
+      setFallbackModel: (model, sourceId) =>
+        set({ fallbackModel: model, fallbackSourceId: sourceId ?? null }),
+
+      setCurrentModel: (model) => set({ currentModel: model }),
+
+      setIsCustomModel: (isCustom) => set({ isCustomModel: isCustom }),
+
+      setIsCustomFallback: (isCustom) => set({ isCustomFallback: isCustom }),
+
+      setCustomModelName: (name) => set({ customModelName: name }),
+
+      setCustomModelSourceId: (id) => set({ customModelSourceId: id }),
+
+      setCustomFallbackName: (name) => set({ customFallbackName: name }),
+
+      setCustomFallbackSourceId: (id) => set({ customFallbackSourceId: id }),
+
       getActiveSource: () => {
         const state = get();
         const explicit = state.sources.find(
           (source) =>
             source.id === state.activeSourceId &&
             source.enabled &&
-            Boolean(source.apiKey),
+            Boolean(source.apiKey)
         );
         if (explicit) {
           return explicit;
         }
 
         const firstEnabled = state.sources.find(
-          (source) => source.enabled && Boolean(source.apiKey),
+          (source) => source.enabled && Boolean(source.apiKey)
         );
         if (firstEnabled) {
           return firstEnabled;
@@ -237,17 +312,13 @@ export const useAiStore = create<AiStore>()(
       },
 
       allowPdfUpload: () => {
-        return get()
-          .getEnabledSources()
-          .some((source) => source.provider === "gemini");
+        return get().getEnabledSources().some(sourceSupportsFileUpload);
       },
 
       getClientForSource: (id) => {
         const state = get();
         if (id) {
-          const explicitSource = state.sources.find(
-            (entry) => entry.id === id,
-          );
+          const explicitSource = state.sources.find((entry) => entry.id === id);
           return explicitSource ? createClientForSource(explicitSource) : null;
         }
 
@@ -264,10 +335,55 @@ export const useAiStore = create<AiStore>()(
       partialize: (state) => ({
         sources: state.sources,
         activeSourceId: state.activeSourceId,
+        fallbackModel: state.fallbackModel,
+        fallbackSourceId: state.fallbackSourceId,
+        currentModel: state.currentModel,
+        isCustomModel: state.isCustomModel,
+        isCustomFallback: state.isCustomFallback,
+        customModelName: state.customModelName,
+        customModelSourceId: state.customModelSourceId,
+        customFallbackName: state.customFallbackName,
+        customFallbackSourceId: state.customFallbackSourceId,
       }),
-      version: 1,
-    },
-  ),
+      version: 5,
+      migrate: (persistedState, version) => {
+        const data =
+          persistedState && typeof persistedState === "object"
+            ? { ...(persistedState as Record<string, unknown>) }
+            : {};
+        if (version < 3) {
+          // Migrate model from active source to global currentModel
+          const sources = data.sources as AiSource[] | undefined;
+          const activeSourceId = data.activeSourceId as string | undefined;
+          const activeSource = sources?.find((s) => s.id === activeSourceId);
+          // Use legacy model from source or default
+          data.currentModel =
+            (activeSource as Record<string, unknown> | undefined)?.model ??
+            DEFAULT_GEMINI_MODEL;
+          // Remove model from all sources
+          if (sources) {
+            data.sources = sources.map((s) => {
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars
+              const { model: _removed, ...rest } = s as AiSource & {
+                model?: string;
+              };
+              return rest;
+            });
+          }
+        }
+        if (version < 4) {
+          // Clear old fallbackSourceId (it had different semantics)
+          delete data.fallbackSourceId;
+          data.fallbackModel = null;
+        }
+        if (version < 5) {
+          // Initialize fallbackSourceId for cross-provider fallback support
+          data.fallbackSourceId = null;
+        }
+        return data;
+      },
+    }
+  )
 );
 
 export const useHasActiveAiKey = () =>

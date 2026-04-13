@@ -1,190 +1,275 @@
 import OpenAI from "openai";
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import type { AiChatMessage } from "./chat-types";
+import { BaseAiClient } from "./base-client";
+import { base64Decoder } from "@/utils/encoding";
+import { toast } from "sonner";
+import i18n from "@/i18n";
+import type { AiFile } from "@/store/ai-store";
+import { NonRetryableError } from "./errors";
 
 export type OpenAiModel = {
   name: string;
   displayName: string;
 };
 
-export interface OpenAiConfig {
-  pollIntervalMs?: number;
-  maxPollMs?: number;
+export interface ResponseInputTextContent {
+  type: "input_text";
+  text: string;
 }
 
-const DEFAULT_OPENAI_ROOT = "https://api.openai.com";
-const OPENAI_PATH_SUFFIX = "/v1";
+export interface ResponseInputImageContent {
+  type: "input_image";
+  image_url: {
+    url: string;
+    detail?: "auto" | "low" | "high";
+  };
+}
+
+export interface ResponseInputFileContent {
+  type: "input_file";
+  filename?: string;
+  file_data: string;
+}
+
+export type ResponseApiContentPart =
+  | ResponseInputTextContent
+  | ResponseInputImageContent
+  | ResponseInputFileContent;
+
+export interface ResponseApiMessage {
+  role: "system" | "user" | "assistant";
+  content: string | ResponseApiContentPart[];
+}
+
+const DEFAULT_OPENAI_ROOT = "https://api.openai.com/v1";
 
 function normalizeBaseUrl(baseUrl?: string) {
-  const normalized = (baseUrl ?? DEFAULT_OPENAI_ROOT).replace(/\/$/, "");
-  return normalized.endsWith(OPENAI_PATH_SUFFIX)
-    ? normalized
-    : `${normalized}${OPENAI_PATH_SUFFIX}`;
+  return (baseUrl ?? DEFAULT_OPENAI_ROOT).replace(/\/$/, "");
 }
 
-type ResponseOutputContent = {
-  text?: string;
-};
-
-type ResponseOutput = {
-  content?: ResponseOutputContent[];
-};
-
-type FinalResponse = {
-  output_text?: string;
-  output?: ResponseOutput[];
-};
-
-function collectOutputText(output?: ResponseOutput[]): string {
-  if (!output) return "";
-  return output
-    .flatMap((item) => item.content ?? [])
-    .map((contentPart) => contentPart.text ?? "")
-    .join("")
-    .trim();
-}
-
-function extractTextFromResponse(response: FinalResponse): string {
-  if (response.output_text && response.output_text.length > 0) {
-    return response.output_text.trim();
-  }
-  return collectOutputText(response.output);
-}
-
-export class OpenAiClient {
+export class OpenAiClient extends BaseAiClient {
   private client: OpenAI;
-  private systemPrompt?: string;
-  private config: Required<OpenAiConfig>;
+  private useResponsesApi: boolean;
+  private webSearchToolType?: string;
 
-  constructor(apiKey: string, baseUrl?: string, config?: OpenAiConfig) {
+  constructor(
+    apiKey: string,
+    baseUrl?: string,
+    useResponsesApi = false,
+    webSearchToolType?: string
+  ) {
+    super();
+    this.useResponsesApi = useResponsesApi;
+    this.webSearchToolType = webSearchToolType;
     this.client = new OpenAI({
       apiKey,
       baseURL: normalizeBaseUrl(baseUrl),
       dangerouslyAllowBrowser: true,
     });
-    this.config = {
-      pollIntervalMs: config?.pollIntervalMs ?? 1_000,
-      maxPollMs: config?.maxPollMs ?? 30_000,
-    };
   }
 
-  setSystemPrompt(prompt: string) {
-    this.systemPrompt = prompt;
-  }
-
+  /**
+   * Sends a request with an image (Vision API).
+   */
   async sendMedia(
-    media: string,
-    mimeType: string,
+    file: AiFile,
     prompt?: string,
-    model = "gpt-4.1-mini",
+    model = "gpt-5.2",
     callback?: (text: string) => void,
+    options?: { onlineSearch?: boolean }
   ) {
-    const input = [];
+    if (!this.useResponsesApi) {
+      if (options?.onlineSearch) {
+        toast.error(
+          i18n.t("ai-client.openai.requires-responses-api-online-search", {
+            ns: "commons",
+          })
+        );
+        throw new NonRetryableError(
+          "Online search requires Responses API to be enabled."
+        );
+      }
+      if (file.mimeType === "application/pdf") {
+        toast.error(
+          i18n.t("ai-client.openai.requires-responses-api-pdf", {
+            ns: "commons",
+          })
+        );
+        throw new NonRetryableError(
+          "PDF processing requires Responses API to be enabled."
+        );
+      }
+      return this._sendMediaLegacy(file, prompt, model, callback);
+    }
 
-    if (this.systemPrompt) {
-      input.push({
-        role: "system" as const,
-        content: [
-          {
-            type: "input_text" as const,
-            text: this.systemPrompt,
-          },
-        ],
+    return this._sendMediaResponsesApi(file, prompt, model, callback, options);
+  }
+
+  private async _sendMediaLegacy(
+    file: AiFile,
+    prompt?: string,
+    model = "gpt-5.2",
+    callback?: (text: string) => void
+  ) {
+    const { data: media, mimeType, name } = file;
+    const messages: ChatCompletionMessageParam[] = [];
+
+    if (this.systemPrompts.length > 0) {
+      const systemPrompt = this.buildSystemPrompt();
+      messages.push({
+        role: "system",
+        content: systemPrompt,
       });
     }
 
-    const userContent: Array<
+    const contentParts: Array<
+      | { type: "text"; text: string }
       | {
-          type: "input_text";
-          text: string;
-        }
-      | {
-          type: "input_image";
-          image_url: string;
-          detail: "auto" | "low" | "high";
+          type: "image_url";
+          image_url: { url: string; detail?: "auto" | "low" | "high" };
         }
     > = [];
+
     if (prompt) {
-      userContent.push({
+      contentParts.push({
+        type: "text",
+        text: prompt,
+      });
+    }
+
+    if (mimeType.startsWith("image/")) {
+      contentParts.push({
+        type: "image_url",
+        image_url: {
+          url: `data:${mimeType};base64,${media}`,
+          detail: "auto",
+        },
+      });
+    } else {
+      try {
+        let charset = "utf-8";
+        const charsetMatch = mimeType.match(/charset=([^;]+)/i);
+        if (charsetMatch && charsetMatch[1]) {
+          charset = charsetMatch[1].trim();
+        }
+        let text: string;
+        try {
+          text = await base64Decoder(media, charset);
+        } catch {
+          text = await base64Decoder(media, "utf-8");
+        }
+        contentParts.push({
+          type: "text",
+          text: `\n\n[File Content: ${name}]\n${text}\n\n`,
+        });
+      } catch (e) {
+        throw new Error(
+          "Failed to decode base64 text: " +
+            (e instanceof Error ? e.message : String(e))
+        );
+      }
+    }
+
+    messages.push({
+      role: "user",
+      content: contentParts,
+    });
+
+    return this._executeStream(model, messages, callback);
+  }
+
+  private async _sendMediaResponsesApi(
+    file: AiFile,
+    prompt?: string,
+    model = "gpt-5.2",
+    callback?: (text: string) => void,
+    options?: { onlineSearch?: boolean }
+  ) {
+    const { data: media, mimeType, name } = file;
+    const messages: ResponseApiMessage[] = [];
+
+    if (this.systemPrompts.length > 0) {
+      messages.push({
+        role: "system",
+        content: this.buildSystemPrompt(),
+      });
+    }
+
+    const contentParts: ResponseApiContentPart[] = [];
+
+    if (prompt) {
+      contentParts.push({
         type: "input_text",
         text: prompt,
       });
     }
-    userContent.push({
-      type: "input_image",
-      image_url: `data:${mimeType};base64,${media}`,
-      detail: "auto",
-    });
 
-    input.push({
-      role: "user" as const,
-      content: userContent,
-    });
-
-    const controller = new AbortController();
-
-    const stream = this.client.responses.stream(
-      {
-        model,
-        input,
-      },
-      {
-        signal: controller.signal,
-      },
-    );
-
-    let aggregated = "";
-    const startTime = Date.now();
-
-    for await (const event of stream) {
-      const eventType = (event as { type?: string }).type;
-
-      if (
-        eventType === "response.output_text.delta" &&
-        typeof (event as { delta?: unknown }).delta === "string"
-      ) {
-        const delta = (event as { delta: string }).delta;
-        aggregated += delta;
-        callback?.(delta);
-      } else if (eventType === "response.error") {
-        const message =
-          (event as { error?: { message?: string } }).error?.message ??
-          "OpenAI streaming error";
-        throw new Error(message);
-      }
-
-      if (Date.now() - startTime > this.config.maxPollMs) {
-        controller.abort();
-        throw new Error("OpenAI response polling timed out");
-      }
-    }
-
-    const finalResponse =
-      (await stream.finalResponse()) as unknown as FinalResponse;
-    if (!aggregated) {
-      aggregated = extractTextFromResponse(finalResponse);
-    }
-
-    return aggregated.trim();
-  }
-
-  async sendChat(
-    messages: AiChatMessage[],
-    model = "gpt-4.1-mini",
-    callback?: (text: string) => void,
-  ) {
-    const input = [];
-
-    if (this.systemPrompt) {
-      input.push({
-        role: "system" as const,
-        content: [
-          {
-            type: "input_text" as const,
-            text: this.systemPrompt,
-          },
-        ],
+    if (mimeType.startsWith("image/")) {
+      contentParts.push({
+        type: "input_image",
+        image_url: {
+          url: `data:${mimeType};base64,${media}`,
+        },
+      });
+    } else {
+      contentParts.push({
+        type: "input_file",
+        filename: name,
+        file_data: media,
       });
     }
+
+    messages.push({
+      role: "user",
+      content: contentParts,
+    });
+
+    return this._executeResponsesStream(model, messages, callback, options);
+  }
+
+  /**
+   * Sends a standard text-only chat request.
+   */
+  async sendChat(
+    messages: AiChatMessage[],
+    model = "gpt-5.2",
+    callback?: (text: string) => void,
+    options?: { onlineSearch?: boolean }
+  ) {
+    if (!this.useResponsesApi && options?.onlineSearch) {
+      toast.error(
+        i18n.t("ai-client.openai.requires-responses-api-online-search", {
+          ns: "commons",
+        })
+      );
+      throw new NonRetryableError(
+        "Online search requires Responses API to be enabled."
+      );
+    }
+
+    if (this.useResponsesApi) {
+      return this._sendChatResponsesApi(messages, model, callback, options);
+    }
+    return this._sendChatLegacy(messages, model, callback);
+  }
+
+  private async _sendChatLegacy(
+    messages: AiChatMessage[],
+    model: string,
+    callback?: (text: string) => void
+  ) {
+    const openAiMessages: ChatCompletionMessageParam[] = [];
+
+    if (this.systemPrompts.length > 0) {
+      const systemPrompt = this.buildSystemPrompt();
+      openAiMessages.push({
+        role: "system",
+        content: systemPrompt,
+      });
+    }
+
+    this.logAiQuery(model, messages);
 
     for (const message of messages) {
       const trimmed = message.content?.trim();
@@ -192,66 +277,164 @@ export class OpenAiClient {
 
       const role =
         message.role === "assistant"
-          ? ("assistant" as const)
+          ? "assistant"
           : message.role === "system"
-            ? ("system" as const)
-            : ("user" as const);
+            ? "system"
+            : "user";
 
-      input.push({
-        role,
-        content: [
-          {
-            type: "input_text" as const,
-            text: trimmed,
-          },
-        ],
+      openAiMessages.push({
+        role: role,
+        content: trimmed,
       });
     }
 
-    const controller = new AbortController();
+    return this._executeStream(model, openAiMessages, callback);
+  }
 
-    const stream = this.client.responses.stream(
-      {
-        model,
-        input,
-      },
-      {
-        signal: controller.signal,
-      },
+  private async _sendChatResponsesApi(
+    messages: AiChatMessage[],
+    model: string,
+    callback?: (text: string) => void,
+    options?: { onlineSearch?: boolean }
+  ) {
+    const openAiMessages: ResponseApiMessage[] = [];
+
+    if (this.systemPrompts.length > 0) {
+      const systemPrompt = this.buildSystemPrompt();
+      openAiMessages.push({
+        role: "system",
+        content: [{ type: "input_text", text: systemPrompt }],
+      });
+    }
+
+    this.logAiQuery(model, messages);
+
+    for (const message of messages) {
+      const trimmed = message.content?.trim();
+      if (!trimmed) continue;
+
+      const role =
+        message.role === "assistant"
+          ? "assistant"
+          : message.role === "system"
+            ? "system"
+            : "user";
+
+      openAiMessages.push({
+        role: role,
+        content: [{ type: "input_text", text: trimmed }],
+      });
+    }
+
+    return this._executeResponsesStream(
+      model,
+      openAiMessages,
+      callback,
+      options
     );
+  }
+
+  private async _executeStream(
+    model: string,
+    messages: ChatCompletionMessageParam[],
+    callback?: (text: string) => void
+  ): Promise<string> {
+    const stream = await this.client.chat.completions.create({
+      model,
+      messages,
+      stream: true,
+    });
 
     let aggregated = "";
-    const startTime = Date.now();
 
-    for await (const event of stream) {
-      const eventType = (event as { type?: string }).type;
+    for await (const chunk of stream) {
+      const delta = chunk.choices[0]?.delta?.content || "";
 
-      if (
-        eventType === "response.output_text.delta" &&
-        typeof (event as { delta?: unknown }).delta === "string"
-      ) {
-        const delta = (event as { delta: string }).delta;
+      if (delta) {
         aggregated += delta;
         callback?.(delta);
-      } else if (eventType === "response.error") {
-        const message =
-          (event as { error?: { message?: string } }).error?.message ??
-          "OpenAI streaming error";
-        throw new Error(message);
-      }
-
-      if (Date.now() - startTime > this.config.maxPollMs) {
-        controller.abort();
-        throw new Error("OpenAI response polling timed out");
       }
     }
 
-    const finalResponse =
-      (await stream.finalResponse()) as unknown as FinalResponse;
-    if (!aggregated) {
-      aggregated = extractTextFromResponse(finalResponse);
-    }
+    return aggregated.trim();
+  }
 
+  private getWebSearchToolType(model: string): string {
+    if (this.webSearchToolType) {
+      return this.webSearchToolType;
+    }
+    // if webSearchToolType is not explicitly set, determine based on model name
+    // For older models, the tool type is "web_search_preview". For newer ones it's "web_search".
+    // This is based on observed behavior and may need to be updated as OpenAI releases new models.
+    return model.includes("4.1") || model.includes("4o")
+      ? "web_search_preview"
+      : "web_search";
+  }
+
+  /**
+   * Streaming helper using the Responses API to support web search.
+   */
+  private async _executeResponsesStream(
+    model: string,
+    messages: ResponseApiMessage[],
+    callback?: (text: string) => void,
+    options?: { onlineSearch?: boolean }
+  ): Promise<string> {
+    const toolType = this.getWebSearchToolType(model);
+
+    const toolsUsed = options?.onlineSearch ? [{ type: toolType }] : undefined;
+    let stream: AsyncIterable<{ type: string; delta?: string }>;
+
+    try {
+      const responsesApi = (
+        this.client as unknown as {
+          responses: {
+            create: (
+              opts: unknown
+            ) => Promise<AsyncIterable<{ type: string; delta?: string }>>;
+          };
+        }
+      ).responses;
+      stream = await responsesApi.create({
+        model,
+        tools: toolsUsed,
+        stream: true,
+        input: messages,
+      });
+    } catch (err) {
+      const message = (err as Error)?.message ?? "";
+      const notSupported =
+        message.includes("not supported") ||
+        message.includes("web search options not supported") ||
+        message.includes("Web search options not supported");
+      if (options?.onlineSearch && notSupported) {
+        console.warn(
+          `Web search not supported for model ${model}; retrying Responses API without search tools.`
+        );
+        toast.warning(
+          i18n.t("ai-client.openai.web-search-not-supported", {
+            ns: "commons",
+            model,
+          })
+        );
+        return this._executeResponsesStream(model, messages, callback, {
+          onlineSearch: false,
+        });
+      }
+      throw err;
+    }
+    let aggregated = "";
+
+    for await (const event of stream) {
+      if (event.type === "response.output_text.delta") {
+        const delta = event.delta;
+
+        if (delta) {
+          aggregated += delta;
+          callback?.(delta);
+        }
+      }
+    }
     return aggregated.trim();
   }
 

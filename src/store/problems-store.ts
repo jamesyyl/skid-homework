@@ -1,280 +1,439 @@
 import { create } from "zustand";
+import { db, type HomeworkRecord } from "@/db/problems-db";
+import { createJSONStorage, persist } from "zustand/middleware";
 
-// --- TYPE DEFINITIONS ---
+export type FileStatus = "success" | "pending" | "failed" | "processing";
+export type HomeworkSource = "upload" | "camera" | "adb";
 
-// Type definition for an image item in the upload list.
 export type FileItem = {
-  id: string; // Unique identifier for each item
-  file: File; // The actual image file
+  id: string;
+  file: File;
+  displayName: string;
   mimeType: string;
   url: string; // Object URL for client-side preview
-  source: "upload" | "camera"; // Origin of the image
-  status: "success" | "pending" | "failed" | "rasterizing";
+  source: HomeworkSource;
+  status: FileStatus;
 };
 
-// Type definition for the solution set of a single image.
 export type Solution = {
-  imageUrl: string; // URL of the source image, used as a key
-  status: "success" | "processing" | "failed"; // Whether the AI processing was successful
-  streamedOutput?: string | null; // Stores the raw streaming output from the AI
-  problems: ProblemSolution[]; // Array of problems found in the image
-  aiSourceId?: string; // Identifier of the AI source that produced the solution
+  fileId: string;
+  status: "success" | "processing" | "pending" | "failed";
+  streamedOutput?: string | null;
+  problems: ProblemSolution[];
+  aiSourceId?: string;
 };
 
-// Type definition for a single problem-answer pair.
-export type ProblemSolution = {
+export interface ExplanationStep {
+  title: string;
+  content: string;
+}
+
+export interface ProblemSolution {
   problem: string;
   answer: string;
-  explanation: string;
-};
+  explanation: string; // The full raw markdown
+  steps: ExplanationStep[]; // Parsed steps
+  onlineSearch?: string; // Raw ONLINE_SEARCH section content
+}
 
-// The interface for our store's state and actions.
 export interface ProblemsState {
   // --- STATE ---
   imageItems: FileItem[];
-  // Use a Map to store solutions. This gives us O(1) access for performance
-  // AND maintains insertion order, which is crucial for rendering.
+  // Map Key is now the FileItem.id, not the URL
   imageSolutions: Map<string, Solution>;
-  selectedImage?: string;
+
+  // Refactored: Stores the unique ID of the selected image
+  selectedImageId?: string;
   selectedProblem: number;
   isWorking: boolean;
+  isInitialized: boolean;
 
   // --- ACTIONS ---
 
-  // Actions for managing image items
-  addFileItems: (items: FileItem[]) => void;
+  // Initialize from DB
+  initializeStore: () => Promise<void>;
+
+  // File Management
+  addFileItems: (items: FileItem[]) => Promise<void>;
+  renameFileItem: (id: string, newName: string) => Promise<void>;
   updateFileItem: (id: string, updates: Partial<FileItem>) => void;
   updateItemStatus: (id: string, status: FileItem["status"]) => void;
-  removeImageItem: (id: string) => void;
+  removeImageItem: (id: string) => Promise<void>;
+  clearAllItems: () => Promise<void>;
+
+  // Problem Management
   updateProblem: (
-    imageUrl: string,
+    fileId: string,
     problemIndex: number,
     newAnswer: string,
     newExplanation: string,
+    newSteps: ExplanationStep[],
+    newOnlineSearch?: string
   ) => void;
-  clearAllItems: () => void;
 
-  // Actions for managing image solutions
+  // Solution Management
   addSolution: (solution: Solution) => void;
-  updateSolution: (imageUrl: string, updates: Partial<Solution>) => void;
-  appendStreamedOutput: (imageUrl: string, chunk: string) => void;
-  clearStreamedOutput: (imageUrl: string) => void;
-  removeSolutionsByUrls: (urls: Set<string>) => void;
+  updateSolution: (fileId: string, updates: Partial<Solution>) => void;
+  appendStreamedOutput: (fileId: string, chunk: string) => void;
+  clearStreamedOutput: (fileId: string) => void;
+  removeSolutionsByIds: (ids: Set<string>) => void; // Renamed from ByUrls
   clearAllSolutions: () => void;
 
-  // Actions for managing selection state
-  setSelectedImage: (image?: string) => void;
+  // UI State
+  setSelectedImageId: (id?: string) => void; // Renamed
   setSelectedProblem: (index: number) => void;
-
-  // Action to update the global working/loading state
   setWorking: (isWorking: boolean) => void;
 }
 
-export const useProblemsStore = create<ProblemsState>((set) => ({
-  // --- INITIAL STATE ---
-  imageItems: [],
-  imageSolutions: new Map(), // Initialize as an empty Map
-  selectedImage: undefined,
-  selectedProblem: 0,
-  isWorking: false,
+export const useProblemsStore = create<ProblemsState>()(
+  persist(
+    (set, get) => ({
+      // --- INITIAL STATE ---
+      imageItems: [],
+      imageSolutions: new Map(),
+      selectedImageId: undefined,
+      selectedProblem: 0,
+      isWorking: false,
+      isInitialized: false,
 
-  // --- ACTION IMPLEMENTATIONS ---
+      // --- ACTION IMPLEMENTATIONS ---
 
-  /**
-   * Adds new image items to the list.
-   */
-  addFileItems: (newItems) =>
-    set((state) => ({ imageItems: [...state.imageItems, ...newItems] })),
+      initializeStore: async () => {
+        // Prevent double initialization
+        if (get().isInitialized) return;
 
-  /**
-   * Updates the status of a specific image item.
-   */
-  updateItemStatus: (id, status) =>
-    set((state) => ({
-      imageItems: state.imageItems.map((item) =>
-        item.id === id ? { ...item, status } : item,
-      ),
-    })),
+        try {
+          const records = await db.homeworks.orderBy("createdAt").toArray();
 
-  /**
-   * Updates a specific file item with a set of partial updates.
-   * This is more flexible than updateItemStatus, allowing changes to any field,
-   * such as adding rasterization results or an error message.
-   */
-  updateFileItem: (id, updates) =>
-    set((state) => ({
-      imageItems: state.imageItems.map((item) =>
-        item.id === id ? { ...item, ...updates } : item,
-      ),
-    })),
+          const items: FileItem[] = [];
+          const solutions = new Map<string, Solution>();
 
-  /**
-   * Removes a single image item by its ID.
-   */
-  removeImageItem: (id) =>
-    set((state) => ({
-      imageItems: state.imageItems.filter((item) => item.id !== id),
-    })),
+          for (const record of records) {
+            // Reconstruct File object (metadata + blob)
+            const file = new File([record.blob], record.fileName, {
+              type: record.mimeType,
+              lastModified: record.createdAt,
+            });
 
-  /**
-   * Updates a specific problem within a solution.
-   */
-  updateProblem: (imageUrl, problemIndex, newAnswer, newExplanation) =>
-    set((state) => {
-      const currentSolution = state.imageSolutions.get(imageUrl);
-      if (!currentSolution) {
-        return state; // Do nothing if solution doesn't exist
-      }
+            // Create a stable Object URL for this session
+            const url = URL.createObjectURL(record.blob);
 
-      const updatedProblems = [...currentSolution.problems];
-      updatedProblems[problemIndex] = {
-        ...updatedProblems[problemIndex],
-        answer: newAnswer,
-        explanation: newExplanation,
-      };
+            items.push({
+              id: record.id,
+              file,
+              displayName: file.name,
+              mimeType: record.mimeType,
+              source: record.source,
+              status: record.status,
+              url,
+            });
 
-      const newSolutionsMap = new Map(state.imageSolutions);
-      newSolutionsMap.set(imageUrl, {
-        ...currentSolution,
-        problems: updatedProblems,
-      });
+            // Rehydrate solution if it exists
+            if (record.solution) {
+              // Sync the solution's ID key to the record ID
+              const solution: Solution = {
+                ...record.solution,
+                fileId: record.id, // Ensure strict mapping
+                // Remove legacy field if it exists in DB record
+                imageUrl: undefined,
+              } as Solution;
 
-      return { imageSolutions: newSolutionsMap };
+              solutions.set(record.id, solution);
+            }
+          }
+
+          set({
+            imageItems: items,
+            imageSolutions: solutions,
+            isInitialized: true,
+          });
+        } catch (error) {
+          console.error("Failed to initialize store from DB:", error);
+          set({ isInitialized: true });
+        }
+      },
+
+      addFileItems: async (newItems) => {
+        const now = Date.now();
+
+        // Prepare records for DB
+        const records: HomeworkRecord[] = newItems.map((item, index) => ({
+          id: item.id,
+          blob: item.file,
+          fileName: item.displayName,
+          mimeType: item.mimeType,
+          source: item.source,
+          status: item.status,
+          createdAt: now + index,
+          solution: undefined,
+        }));
+
+        set((state) => ({ imageItems: [...state.imageItems, ...newItems] }));
+
+        try {
+          await db.homeworks.bulkAdd(records);
+        } catch (err) {
+          console.error("Failed to persist items:", err);
+        }
+      },
+
+      renameFileItem: async (id, newName) => {
+        const items = get().imageItems;
+        const oldItem = items.find((i) => i.id === id);
+
+        if (!oldItem || oldItem.displayName === newName) return;
+
+        const originalItem: FileItem = { ...oldItem };
+
+        const newFile = new File([oldItem.file], newName, {
+          type: oldItem.mimeType || oldItem.file.type,
+          lastModified: Date.now(),
+        });
+        const newUrl = URL.createObjectURL(newFile);
+
+        set((state) => ({
+          imageItems: state.imageItems.map((item) =>
+            item.id === id
+              ? { ...item, file: newFile, url: newUrl, displayName: newName }
+              : item
+          ),
+          // Note: No need to update imageSolutions map because the Key is now 'id', which hasn't changed.
+        }));
+
+        try {
+          await db.homeworks.update(id, {
+            fileName: newName,
+            blob: newFile,
+          });
+
+          // revoke old url after db operation succeeded
+          if (originalItem.url) URL.revokeObjectURL(originalItem.url);
+        } catch (error) {
+          console.error("Failed to update database:", error);
+
+          // rollback state in zustand
+          set((state) => ({
+            imageItems: state.imageItems.map((item) =>
+              item.id === id ? originalItem : item
+            ),
+          }));
+
+          // revoke new url
+          if (newUrl) URL.revokeObjectURL(newUrl);
+        }
+      },
+
+      updateItemStatus: (id, status) => {
+        set((state) => ({
+          imageItems: state.imageItems.map((item) =>
+            item.id === id ? { ...item, status } : item
+          ),
+        }));
+        db.homeworks.update(id, { status }).catch(console.error);
+      },
+
+      updateFileItem: (id, updates) => {
+        set((state) => ({
+          imageItems: state.imageItems.map((item) =>
+            item.id === id ? { ...item, ...updates } : item
+          ),
+        }));
+
+        // Map FileItem updates to HomeworkRecord updates where applicable
+        const dbUpdates: Partial<HomeworkRecord> = {};
+        if (updates.status) dbUpdates.status = updates.status;
+
+        if (Object.keys(dbUpdates).length > 0) {
+          db.homeworks.update(id, dbUpdates).catch(console.error);
+        }
+      },
+
+      removeImageItem: async (id) => {
+        const state = get();
+        const itemToRemove = state.imageItems.find((i) => i.id === id);
+
+        // Revoke memory reference
+        if (itemToRemove?.url) {
+          URL.revokeObjectURL(itemToRemove.url);
+        }
+
+        set((state) => {
+          const newSolutions = new Map(state.imageSolutions);
+          // Clean up the solution from memory map using ID
+          newSolutions.delete(id);
+
+          return {
+            imageItems: state.imageItems.filter((item) => item.id !== id),
+            imageSolutions: newSolutions,
+            // Reset selected if we deleted the active one
+            selectedImageId:
+              state.selectedImageId === id ? undefined : state.selectedImageId,
+          };
+        });
+
+        await db.homeworks.delete(id);
+      },
+
+      updateProblem: (
+        fileId,
+        problemIndex,
+        newAnswer,
+        newExplanation,
+        newSteps,
+        newOnlineSearch
+      ) => {
+        set((state) => {
+          const currentSolution = state.imageSolutions.get(fileId);
+          if (!currentSolution) return state;
+
+          const updatedProblems = [...currentSolution.problems];
+          const existingProblem = updatedProblems[problemIndex];
+          updatedProblems[problemIndex] = {
+            ...existingProblem,
+            answer: newAnswer,
+            explanation: newExplanation,
+            steps: newSteps,
+            onlineSearch: newOnlineSearch,
+          };
+
+          const updatedSolution = {
+            ...currentSolution,
+            problems: updatedProblems,
+          };
+
+          const newSolutionsMap = new Map(state.imageSolutions);
+          newSolutionsMap.set(fileId, updatedSolution);
+
+          // Sync to DB
+          db.homeworks
+            .update(fileId, { solution: updatedSolution })
+            .catch(console.error);
+
+          return { imageSolutions: newSolutionsMap };
+        });
+      },
+
+      clearAllItems: async () => {
+        // Revoke all URLs
+        get().imageItems.forEach((i) => URL.revokeObjectURL(i.url));
+
+        set({
+          imageItems: [],
+          imageSolutions: new Map(),
+          selectedImageId: undefined,
+        });
+
+        await db.homeworks.clear();
+      },
+
+      addSolution: (newSolution) =>
+        set((state) => {
+          if (state.imageSolutions.has(newSolution.fileId)) {
+            console.warn(`Solution for ${newSolution.fileId} already exists.`);
+            return state;
+          }
+          const newSolutionsMap = new Map(state.imageSolutions);
+          newSolutionsMap.set(newSolution.fileId, newSolution);
+
+          // Sync to DB
+          db.homeworks
+            .update(newSolution.fileId, { solution: newSolution })
+            .catch(console.error);
+
+          return { imageSolutions: newSolutionsMap };
+        }),
+
+      updateSolution: (fileId, updates) =>
+        set((state) => {
+          const currentSolution = state.imageSolutions.get(fileId);
+          if (!currentSolution) {
+            console.error(
+              `Attempted to update a non-existent solution for ID: ${fileId}`
+            );
+            return state;
+          }
+
+          const updatedSolution = { ...currentSolution, ...updates };
+
+          if (updates.status === "success") {
+            updatedSolution.streamedOutput = null;
+          }
+
+          const newSolutionsMap = new Map(state.imageSolutions);
+          newSolutionsMap.set(fileId, updatedSolution);
+
+          // Sync to DB (Only persist significant updates, avoid saving while streaming)
+          db.homeworks
+            .update(fileId, { solution: updatedSolution })
+            .catch(console.error);
+
+          return { imageSolutions: newSolutionsMap };
+        }),
+
+      appendStreamedOutput: (fileId, chunk) =>
+        set((state) => {
+          // Memory only - do not sync to DB to avoid IO trashing
+          const currentSolution = state.imageSolutions.get(fileId);
+          if (!currentSolution) return state;
+
+          const newSolutionsMap = new Map(state.imageSolutions);
+          newSolutionsMap.set(fileId, {
+            ...currentSolution,
+            streamedOutput: (currentSolution.streamedOutput || "") + chunk,
+          });
+
+          return { imageSolutions: newSolutionsMap };
+        }),
+
+      clearStreamedOutput: (fileId) =>
+        set((state) => {
+          const currentSolution = state.imageSolutions.get(fileId);
+          if (!currentSolution) return state;
+
+          const newSolutionsMap = new Map(state.imageSolutions);
+          newSolutionsMap.set(fileId, {
+            ...currentSolution,
+            streamedOutput: null,
+          });
+
+          return { imageSolutions: newSolutionsMap };
+        }),
+
+      removeSolutionsByIds: (idsToRemove) =>
+        set((state) => {
+          const newSolutionsMap = new Map(state.imageSolutions);
+
+          idsToRemove.forEach((id) => {
+            newSolutionsMap.delete(id);
+
+            // Remove solution from DB record
+            db.homeworks
+              .update(id, { solution: undefined })
+              .catch(console.error);
+          });
+          return { imageSolutions: newSolutionsMap };
+        }),
+
+      clearAllSolutions: () => {
+        set({ imageSolutions: new Map() });
+        // Clear all solutions in DB but keep files
+        db.homeworks
+          .toCollection()
+          .modify({ solution: undefined })
+          .catch(console.error);
+      },
+
+      setSelectedImageId: (selectedImageId) => set({ selectedImageId }),
+      setSelectedProblem: (selectedProblem) => set({ selectedProblem }),
+      setWorking: (isWorking) => set({ isWorking }),
     }),
-
-  /**
-   * Clears all image items from the state.
-   */
-  clearAllItems: () => set({ imageItems: [] }),
-
-  /**
-   * Adds a new solution to the map.
-   * Use this to create an initial placeholder before AI processing begins.
-   * This function will NOT overwrite an existing solution to prevent accidental data loss.
-   * @param newSolution The initial solution object.
-   */
-  addSolution: (newSolution) =>
-    set((state) => {
-      // Prevent overwriting an existing entry with this specific action.
-      if (state.imageSolutions.has(newSolution.imageUrl)) {
-        console.warn(
-          `Solution for ${newSolution.imageUrl} already exists. Use updateSolution to modify it.`,
-        );
-        return state;
-      }
-      const newSolutionsMap = new Map(state.imageSolutions);
-      newSolutionsMap.set(newSolution.imageUrl, newSolution);
-      return { imageSolutions: newSolutionsMap };
-    }),
-
-  /**
-   * Updates an existing solution with new data.
-   * This is the primary way to update a solution after AI processing is complete.
-   * It performs an O(1) update.
-   * If the update includes `success: true`, it automatically clears `streamedOutput`.
-   * @param imageUrl The key of the solution to update.
-   * @param updates An object containing the fields to update (e.g., { problems, success }).
-   */
-  updateSolution: (imageUrl, updates) =>
-    set((state) => {
-      const currentSolution = state.imageSolutions.get(imageUrl);
-
-      // If there's no solution to update, do nothing.
-      if (!currentSolution) {
-        console.error(
-          `Attempted to update a non-existent solution for URL: ${imageUrl}`,
-        );
-        return state;
-      }
-
-      const newSolutionsMap = new Map(state.imageSolutions);
-
-      // Merge the current solution with the updates.
-      const updatedSolution = { ...currentSolution, ...updates };
-
-      // If the update marks the solution as successful, clear the streamed output.
-      if (updates.status === "success") {
-        updatedSolution.streamedOutput = null;
-      }
-
-      newSolutionsMap.set(imageUrl, updatedSolution);
-
-      return { imageSolutions: newSolutionsMap };
-    }),
-
-  /**
-   * Appends a chunk of text to a solution's streamedOutput. O(1) performance.
-   * @param imageUrl The unique identifier for the solution to update.
-   * @param chunk The piece of text to append.
-   */
-  appendStreamedOutput: (imageUrl, chunk) =>
-    set((state) => {
-      const currentSolution = state.imageSolutions.get(imageUrl);
-      if (!currentSolution) return state;
-
-      const newSolutionsMap = new Map(state.imageSolutions);
-      newSolutionsMap.set(imageUrl, {
-        ...currentSolution,
-        streamedOutput: (currentSolution.streamedOutput || "") + chunk,
-      });
-
-      return { imageSolutions: newSolutionsMap };
-    }),
-
-  /**
-   * Clears the streamedOutput for a specific solution, setting it to null.
-   * This is useful if a user wants to manually clear a log or cancel an operation.
-   * O(1) performance.
-   * @param imageUrl The key of the solution to modify.
-   */
-  clearStreamedOutput: (imageUrl: string) =>
-    set((state) => {
-      const currentSolution = state.imageSolutions.get(imageUrl);
-      // Do nothing if the solution doesn't exist.
-      if (!currentSolution) {
-        return state;
-      }
-
-      const newSolutionsMap = new Map(state.imageSolutions);
-      // Create a new solution object with streamedOutput set to null.
-      newSolutionsMap.set(imageUrl, {
-        ...currentSolution,
-        streamedOutput: null,
-      });
-
-      return { imageSolutions: newSolutionsMap };
-    }),
-
-  /**
-   * Removes solutions associated with a given set of image URLs.
-   * The order of the remaining items is preserved.
-   */
-  removeSolutionsByUrls: (urlsToRemove) =>
-    set((state) => {
-      const newSolutionsMap = new Map(state.imageSolutions);
-      urlsToRemove.forEach((url) => {
-        newSolutionsMap.delete(url);
-      });
-      return { imageSolutions: newSolutionsMap };
-    }),
-
-  /**
-   * Clears all solutions from the state.
-   */
-  clearAllSolutions: () => set({ imageSolutions: new Map() }),
-
-  /**
-   * Sets the currently selected image URL.
-   */
-  setSelectedImage: (selectedImage) => set({ selectedImage }),
-
-  /**
-   * Sets the index of the currently selected problem for the selected image.
-   */
-  setSelectedProblem: (selectedProblem) => set({ selectedProblem }),
-
-  /**
-   * Sets the global working state, e.g., for a global loading indicator.
-   */
-  setWorking: (isWorking) => set({ isWorking }),
-}));
+    {
+      name: "problems-storage",
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        selectedImageId: state.selectedImageId,
+        selectedProblem: state.selectedProblem,
+      }),
+    }
+  )
+);

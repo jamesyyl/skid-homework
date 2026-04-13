@@ -1,4 +1,11 @@
 {
+  "md": {
+    "generating-diagram": "Generating diagram...",
+    "diagram": {
+      "view-diagram": "View Diagram",
+      "view-code": "View Code"
+    }
+  },
   "actions": {
     "clear-all": "Clear All",
     "clear-confirmation": "Click again to clear",
@@ -6,7 +13,7 @@
     "scan": "Let's Skid",
     "chat": "Chat",
     "settings": "Settings",
-    "title": "Add Images",
+    "title": "Add Homework",
     "global-traits": {
       "trigger": "Global Traits Editor",
       "title": "Edit Global Traits",
@@ -16,34 +23,53 @@
     }
   },
   "preview": {
-    "drag-tip": "You can drag your files to this panel.",
+    "drag-tip": "You can drag or paste your files to this panel.",
     "drag-tip-mobile": "Tap a card to zoom in. Swipe left or right to review everything.",
+    "supported-types": "Supports images, text, Markdown, JSON, etc.",
     "no-files": "No files yet. Upload or take a photo to begin.",
     "title": "Preview",
+    "tip": "Hint: double click to focus file on solution area, single click to preview in full screen",
     "image-alt": "Homework preview",
     "file-type": {
       "pdf": "PDF",
       "unknown": "Unknown type"
     },
-    "remove-aria": "Remove image",
-    "drop-cancel": "Drag here to cancel"
+    "drop-cancel": "Drag here to cancel",
+    "remove": {
+      "menu-item": "Remove",
+      "aria": "Remove File"
+    },
+    "rename": {
+      "menu-item": "Rename",
+      "dialog": {
+        "title": "Rename File",
+        "desc": "Please enter the new name for the file",
+        "confirm": "Confirm",
+        "new-name": "New Name"
+      }
+    }
   },
   "scan-page": {
-    "donate-btn": "Donate now",
+    "discussions-btn": "Discussions",
     "title": "Scan your homework",
     "tip": "We never upload without your action.",
+    "loading": "Loading...",
     "mobile": {
       "status": "{{count}} file ready",
       "status_plural": "{{count}} files ready",
       "empty": "Add a photo or PDF to get started.",
       "hint-ready": "You're ready to scan. Tap “Let's Skid” when you're set.",
-      "hint-pdf": "Enable a Gemini source in Settings to allow PDF uploads.",
+      "hint-pdf": "Enable a Gemini or OpenAI (Responses API enabled) source in Settings to allow PDF uploads.",
       "tabs": {
         "capture": "Capture",
         "preview": "Review"
       }
     },
     "toasts": {
+      "post-processing": {
+        "title": "Still processing...",
+        "description": "Your image was still post-processing. Please wait for a while."
+      },
       "no-model": {
         "title": "Model required",
         "description": "Please choose a model for {{provider}} in Settings before scanning."
@@ -53,8 +79,8 @@
         "description": "Please set an API key for {{provider}} in Settings."
       },
       "all-processed": {
-        "title": "All images processed",
-        "description": "There are no pending or failed images to scan."
+        "title": "All files processed",
+        "description": "There are no pending or failed files to scan."
       },
       "working": {
         "title": "Working...",
@@ -72,9 +98,25 @@
         "title": "No AI sources configured",
         "description": "Enable at least one AI provider with an API key in Settings before scanning."
       },
+      "unsupported-file": {
+        "title": "Unsupported file type",
+        "description": "Your file with mime type {{mimeType}} is currently not supported by SkidHomework."
+      },
       "pdf-blocked": {
         "title": "PDF uploads disabled",
-        "description": "Enable a Gemini source to process PDF files."
+        "description": "Enable a Gemini or OpenAI (Responses API enabled) source to process PDF files."
+      },
+      "retry": {
+        "title": "Request failed, retrying",
+        "description": "Attempt {{attempt}} failed: {{error}}. Retrying in {{delay}} seconds..."
+      },
+      "retry-exhausted": {
+        "title": "Retries exhausted",
+        "description": "All {{maxRetries}} retries for {{source}} failed."
+      },
+      "fallback": {
+        "title": "Switching to fallback model",
+        "description": "Primary model failed, retrying with fallback model {{model}}..."
       }
     },
     "errors": {
@@ -84,7 +126,8 @@
         "explanation": "{{error}}"
       },
       "missing-key": "Missing API key for {{provider}}.",
-      "parsing-failed": "Failed to parse the AI response."
+      "parsing-failed": "Failed to parse the AI response.",
+      "no-client": "No AI client available for the selected source."
     },
     "footer": {
       "license": "Licensed under GPL-3.0.",
@@ -98,7 +141,10 @@
     "actions": {
       "back": "Back to Scanner",
       "new-chat": "New Chat",
-      "delete-chat": "Delete Chat"
+      "delete-chat": "Delete Chat",
+      "search": "Search chats...",
+      "close-sidebar": "Close Sidebar",
+      "open-settings": "Settings"
     },
     "source": {
       "section": "Model",
@@ -123,7 +169,8 @@
     "composer": {
       "placeholder": "Ask a question or paste a problem...",
       "send": "Send",
-      "sending": "Sending..."
+      "sending": "Sending...",
+      "aigc-disclaimer": "AI can make mistakes. Verify important information."
     },
     "errors": {
       "no-source": "Please enable at least one source with an API key in Settings.",
@@ -134,22 +181,22 @@
     }
   },
   "solutions": {
-    "analyzing": "Analyzing... extracting problems and solutions from your images.",
-    "idle": "No solutions yet. Add images and click \"Let's Skid\" to see results here.",
+    "analyzing": "Analyzing... extracting problems and solutions from your files.",
+    "idle": "No solutions yet. Add files and click \"Let's Skid\" to see results here.",
     "title": "Solutions",
     "gesture-hint": "Swipe left or right to switch problems.",
     "status": {
-      "success": "No problems were detected for this image.",
+      "success": "No problems were detected in this file.",
       "stream": "Reasoning...",
       "pending": "Processing in progress...",
-      "failed": "Failed to process this image. Please try again.",
+      "failed": "Failed to process this file. Please try again.",
       "success-with-provider": "Solved by {{provider}}."
     },
-    "focus-region-aria": "Solutions keyboard focus region (Tab/Shift+Tab for problems, Space/Shift+Space for images)",
+    "focus-region-aria": "Solutions keyboard focus region (Tab/Shift+Tab for problems, Space/Shift+Space for files)",
     "tabs": {
       "fallback": "File {{index}}"
     },
-    "photo-label": "Photo {{index}} • {{source}}",
+    "file-label": "File {{fileName}} • {{source}}",
     "toggle-preview": "Toggle Preview",
     "streaming": {
       "title": "AI Output",
@@ -184,9 +231,16 @@
     }
   },
   "upload-area": {
-    "take-photo": "Take Photo",
+    "take-photo": "Camera",
     "upload": "Upload Files",
-    "upload-tip": "Images are supported. PDFs require an active Gemini source.",
+    "upload-tip": "Images and text files are supported. PDFs require an active Gemini or OpenAI (Responses API enabled) source.",
+    "text-input": {
+      "button": "Text",
+      "title": "Input Problem Text",
+      "description": "Paste or type the problem content directly.",
+      "placeholder": "Enter problem here...",
+      "submit": "Confirm"
+    },
     "camera-help-aria": "Camera help",
     "camera-tip": {
       "title": "Taking photos on different devices",
@@ -198,7 +252,21 @@
       ],
       "close": "Got it"
     },
-    "pdf-disabled": "PDF uploads are available only when a Gemini source is enabled."
+    "pdf-disabled": "PDF uploads are available only when a Gemini or OpenAI (Response API enabled) source is enabled.",
+    "adb": {
+      "connect": "ADB Connect",
+      "reconnect": "Reconnect ADB",
+      "screenshot": "ADB Screenshot",
+      "connecting": "Connecting...",
+      "screenshot-busy": "Capturing...",
+      "screenshot-hint": "Capture a screenshot from a connected Android device via ADB (WebUSB)",
+      "menu-aria-label": "ADB Menu",
+      "capture-timeout": "ADB screenshot timed out. Please check the connection and try again."
+    },
+    "toasts": {
+      "adb-failed": "Something went wrong with ADB: {{error}}",
+      "webusb-not-supported": "WebUSB is not supported in this browser."
+    }
   },
   "uploads-info": {
     "selected": "Selected"
@@ -217,6 +285,28 @@
       "name": {
         "label": "Source name",
         "placeholder": "Friendly name shown in the app"
+      },
+      "advanced": {
+        "title": "Advanced Options",
+        "quick-preset": "Quick Preset Provider",
+        "quick-preset-placeholder": "Select preset provider...",
+        "openai-default": "OpenAI (Default)",
+        "openrouter": "OpenRouter",
+        "custom-url": "Custom URL",
+        "switched-openrouter": "Switched to OpenRouter",
+        "switched-openai": "Reset to OpenAI default",
+        "enable-responses-api": "Enable Responses API",
+        "responses-api-tip": "Hint: Enabling the new API allows OpenAI models to read PDFs and perform web searches. These features are unavailable without this API.",
+        "web-search-tool": {
+          "label": "Web Search Tool Type",
+          "placeholder": "Select tool type...",
+          "auto": "Auto (based on model)",
+          "web-search": "web_search",
+          "web-search-preview": "web_search_preview",
+          "custom": "Custom",
+          "custom-placeholder": "Enter custom tool name...",
+          "tip": "Choose the web search tool type for the Responses API. Auto will select based on the model name."
+        }
       }
     },
     "sources": {
@@ -243,13 +333,24 @@
         "name-placeholder": "e.g. Classroom Gemini",
         "confirm": "Add source",
         "cancel": "Cancel",
-        "success": "Added {{name}}."
+        "success": "Added {{name}}.",
+        "key": "API Key",
+        "key-placeholder": "abcdef",
+        "address": "API Base Url (Optional)"
       },
       "make-active": "Set active",
       "remove": {
         "label": "Remove source",
         "success": "Removed {{name}}.",
         "error": "Keep at least one AI source."
+      },
+      "share": {
+        "label": "Share source",
+        "dialog": {
+          "title": "Share AI Source",
+          "desc": "Scan the QR code or copy the link below. Treat this URL like a password.",
+          "copy": "Copy"
+        }
       }
     },
     "appearance": {
@@ -287,25 +388,33 @@
       "actions": {
         "upload": {
           "label": "Upload files",
-          "description": "Opens the file picker for selecting images or PDFs."
+          "description": "Opens the file picker for selecting files."
         },
         "camera": {
           "label": "Take photo",
           "description": "Launches the device camera to capture homework."
         },
-        "startScan": {
+        "text-input": {
+          "label": "Text Input",
+          "description": "Open text input dialog."
+        },
+        "adb-screenshot": {
+          "label": "ADB screenshot",
+          "description": "Capture the connected Android device's screen via ADB."
+        },
+        "start-scan": {
           "label": "Start scan",
           "description": "Sends all pending items to your AI sources."
         },
-        "clearAll": {
+        "clear-all": {
           "label": "Clear all",
           "description": "Removes every uploaded item and solution."
         },
-        "openSettings": {
+        "open-settings": {
           "label": "Open settings",
           "description": "Opens this settings page from anywhere in the app."
         },
-        "openChat": {
+        "open-chat": {
           "label": "Open chat",
           "description": "Jump straight to the chat workspace."
         },
@@ -324,21 +433,43 @@
         "none": "No model selected",
         "unknown": "Unknown model ({{name}})"
       },
+      "show-selector-in-scanner": "Show model selector in scanner",
       "refresh": "Refresh models",
       "manual": {
         "title": "Custom model",
+        "select-provider": "Select provider",
         "placeholder": "Model identifier",
+        "apply": "Apply",
         "desc": "Enter a model name manually if it is not listed."
       },
       "fetch": {
         "error": "Failed to fetch models for {{provider}}. Check your API key or base URL."
+      },
+      "max-retries": {
+        "label": "Max retries",
+        "tip": "Maximum number of automatic retries when API calls fail (0-10). Set to 0 to disable retries."
+      },
+      "fallback": {
+        "label": "When selected model is unavailable, fall back to",
+        "desc": "Automatically switch to this model when the primary model fails",
+        "none": "None"
       }
     },
     "thinking": {
       "title": "Thinking Settings",
       "desc": "Adjust advanced thinking parameters for supported providers.",
       "budget": "Thinking budget",
-      "tokens-unit": "tokens"
+      "tokens-unit": "tokens",
+      "online-search": {
+        "title": "Online Search Settings",
+        "toggle": {
+          "settings": "Online search",
+          "disabled": "Enable online search",
+          "enabled": "Enabled online search"
+        },
+        "desc": "Allow the assistant to call web search tools when needed.",
+        "show-toggle-in-scanner": "Show online search toggle in scanner"
+      }
     },
     "traits": {
       "title": "System Prompt (Traits)",
@@ -365,11 +496,19 @@
       },
       "image-post-processing": {
         "title": "Image Post-processing",
-        "binarizing": "Enable binarizing"
+        "enhancement": "Enable Image Enhancement"
       },
       "ui": {
         "title": "UI",
-        "show-donate-btn": "Show donate button"
+        "clear-dialog-on-submit": "Clear dialog after submit"
+      },
+      "explanation": {
+        "title": "Explanation Mode",
+        "mode": {
+          "everything": "Show everything to me",
+          "steps": "Only show hits when I need"
+        },
+        "search-placeholder": "Search modes..."
       }
     }
   },
@@ -415,6 +554,43 @@
       "source": "Source Code"
     }
   },
+  "import-settings-page": {
+    "error": {
+      "title": "Error",
+      "parse-failed": "Failed to parse configuration. The link might be broken.",
+      "home": "Return Home"
+    },
+    "loading": {
+      "parsing": "Parsing configuration..."
+    },
+    "success": {
+      "title": "You're all set!",
+      "description": "The AI model <strong>{{name}}</strong> has been successfully imported.",
+      "buttons": {
+        "settings": "Settings",
+        "undo": "Undo",
+        "home": "Let's Skid"
+      }
+    },
+    "confirm": {
+      "title": "Import AI Model",
+      "description": "Do you want to add this configuration to your settings?",
+      "fields": {
+        "name": "Name:",
+        "provider": "Provider:",
+        "model": "Model Name:",
+        "base": "Base URL:"
+      },
+      "alert": {
+        "title": "Security Check",
+        "description": "Only import configurations from sources you trust. Otherwise it may cause a privacy leak. Use at your own risk."
+      },
+      "buttons": {
+        "cancel": "Cancel",
+        "confirm": "Yes, Import"
+      }
+    }
+  },
   "solution-viewer": {
     "progress": {
       "prefix": "Problem",
@@ -433,13 +609,17 @@
         "description": "Please copy manually."
       }
     },
-    "source-image": "Source image:",
+    "source-image": "Source file:",
     "open-preview": "open preview",
     "navigation": {
       "prev-problem": "Prev",
       "next-problem": "Next",
-      "prev-image": "⟵ Image",
-      "next-image": "Image ⟶"
+      "prev-image": "⟵ File",
+      "next-image": "File ⟶"
+    },
+    "online-search": {
+      "title": "Online search results",
+      "placeholder": "No search indices provided."
     },
     "chat": {
       "button": "Chat about this",
@@ -495,8 +675,33 @@
       }
     }
   },
+  "inspect-dialog": {
+    "title": "Inspect Details",
+    "desc": "Review the AI generated Markdown content.",
+    "close": "Close",
+    "problem": "Problem",
+    "answer": "Answer",
+    "explanation": "Explanation",
+    "online-search": "Online Search",
+    "copy": {
+      "success": "Copied"
+    }
+  },
   "sources": {
     "upload": "Upload",
-    "camera": "Camera"
+    "camera": "Camera",
+    "adb": "ADB"
+  },
+  "ai-client": {
+    "openai": {
+      "requires-responses-api-online-search": "Using online search requires Responses API to be enabled",
+      "requires-responses-api-pdf": "Using PDF recognition requires Responses API to be enabled",
+      "web-search-not-supported": "Model {{model}} does not support web search, continuing without it"
+    }
+  },
+  "dev": {
+    "copy": {
+      "success": "Copied"
+    }
   }
 }

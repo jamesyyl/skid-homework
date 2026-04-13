@@ -1,4 +1,11 @@
 {
+  "md": {
+    "generating-diagram": "生成图片中...",
+    "diagram": {
+      "view-diagram": "查看图像",
+      "view-code": "查看代码"
+    }
+  },
   "actions": {
     "clear-all": "清空所有文件",
     "clear-confirmation": "再点击一次",
@@ -6,7 +13,7 @@
     "scan": "开始打滑",
     "chat": "聊天",
     "settings": "设置",
-    "title": "上传照片",
+    "title": "添加作业",
     "global-traits": {
       "trigger": "全局提示词编辑器",
       "title": "编辑全局提示词",
@@ -16,34 +23,53 @@
     }
   },
   "preview": {
-    "drag-tip": "你可以把文件拖动到这个窗口中",
+    "drag-tip": "你可以把文件拖动到这个窗口中, 或者粘贴屏幕截图",
     "drag-tip-mobile": "轻触卡片即可放大，左右滑动快速浏览。",
+    "supported-types": "支持图片、文本、Markdown、JSON 等格式",
     "no-files": "没有文件 上传或拍照以开始",
     "title": "预览",
-    "image-alt": "作业预览图",
+    "tip": "提示：双击以在解决方案区域聚焦文件，单击文件全屏预览",
+    "image-alt": "作业预览",
     "file-type": {
       "pdf": "PDF",
       "unknown": "未知类型"
     },
-    "remove-aria": "移除图片",
-    "drop-cancel": "拖到这里取消"
+    "drop-cancel": "拖到这里取消",
+    "remove": {
+      "menu-item": "移除文件",
+      "aria": "移除文件"
+    },
+    "rename": {
+      "menu-item": "重命名",
+      "dialog": {
+        "title": "重命名文件",
+        "desc": "请输入文件的新名称",
+        "confirm": "确认",
+        "new-name": "新名称"
+      }
+    }
   },
   "scan-page": {
-    "donate-btn": "现在赞助",
+    "discussions-btn": "讨论区",
     "title": "扫描你的作业",
     "tip": "我们不会在未经授权时上传您的文件",
+    "loading": "加载中...",
     "mobile": {
       "status": "已有 {{count}} 个文件",
       "status_plural": "已有 {{count}} 个文件",
-      "empty": "先添加照片或 PDF 开始使用。",
+      "empty": "先添加文件或 PDF 开始使用。",
       "hint-ready": "可以开始识别了，准备好后点击「开始打滑」。",
-      "hint-pdf": "启用 Gemini 源即可支持 PDF 上传。",
+      "hint-pdf": "启用 Gemini 或开启 Responses API 的 OpenAI 源即可支持 PDF 上传。",
       "tabs": {
         "capture": "采集",
         "preview": "预览"
       }
     },
     "toasts": {
+      "post-processing": {
+        "title": "正在处理中......",
+        "description": "AI 需要一点时间来处理你的作业，请稍等片刻。"
+      },
       "no-model": {
         "title": "需要模型",
         "description": "请先在设置中为 {{provider}} 选择模型。"
@@ -54,7 +80,7 @@
       },
       "all-processed": {
         "title": "全部已处理",
-        "description": "没有待处理或失败的图片了。"
+        "description": "没有待处理或失败的文件了。"
       },
       "working": {
         "title": "正在处理...",
@@ -72,9 +98,25 @@
         "title": "尚未配置 AI 源",
         "description": "请在设置中启用至少一个已配置密钥的 AI 提供商后再开始扫描。"
       },
+      "unsupported-file": {
+        "title": "不支持的文件类型",
+        "description": "您的文件MIME 类型为 {{mimeType}}, 当前不被 SkidHomework 支持"
+      },
       "pdf-blocked": {
         "title": "PDF 上传已禁用",
-        "description": "要处理 PDF，请启用 Gemini 源。"
+        "description": "要处理 PDF，请启用 Gemini 源或开启 Responses API 的 OpenAI 源。"
+      },
+      "retry": {
+        "title": "请求失败，正在重试",
+        "description": "第 {{attempt}} 次尝试失败：{{error}}。{{delay}} 秒后重试..."
+      },
+      "retry-exhausted": {
+        "title": "重试次数已用尽",
+        "description": "{{source}} 的所有 {{maxRetries}} 次重试均失败"
+      },
+      "fallback": {
+        "title": "正在切换到回落模型",
+        "description": "主模型请求失败，正在使用回落模型 {{model}} 重试..."
       }
     },
     "errors": {
@@ -84,7 +126,8 @@
         "explanation": "{{error}}"
       },
       "missing-key": "{{provider}} 尚未配置 API 密钥。",
-      "parsing-failed": "解析 AI 返回内容失败。"
+      "parsing-failed": "解析 AI 返回内容失败。",
+      "no-client": "选定的来源没有可用的 AI 客户端。"
     },
     "footer": {
       "license": "基于 GPL-3.0 许可发布。",
@@ -98,7 +141,10 @@
     "actions": {
       "back": "返回扫描页",
       "new-chat": "新对话",
-      "delete-chat": "删除对话"
+      "delete-chat": "删除对话",
+      "search": "搜索聊天...",
+      "close-sidebar": "关闭侧边栏",
+      "open-settings": "设置"
     },
     "source": {
       "section": "模型",
@@ -123,7 +169,8 @@
     "composer": {
       "placeholder": "输入问题或粘贴题目...",
       "send": "发送",
-      "sending": "发送中..."
+      "sending": "发送中...",
+      "aigc-disclaimer": "AI 会犯错, 请核对重要信息"
     },
     "errors": {
       "no-source": "请先在设置中启用至少一个已配置密钥的 AI 源。",
@@ -134,22 +181,22 @@
     }
   },
   "solutions": {
-    "analyzing": "正在分析... 正在从你的图片中提取问题和解决方案",
-    "idle": "点击\"开始打滑\"将图片发送给AI以在这里查看结果",
+    "analyzing": "正在分析... 正在从你的文件中提取问题和解决方案",
+    "idle": "点击\"开始打滑\"将文件发送给AI以在这里查看结果",
     "title": "解决方案",
     "gesture-hint": "左右滑动切换题目。",
     "status": {
-      "success": "这张图片没有检测到题目。",
+      "success": "该文件没有检测到题目。",
       "stream": "正在推理...",
       "pending": "正在处理中...",
       "failed": "处理失败，请重试。",
       "success-with-provider": "由 {{provider}} 处理成功。"
     },
-    "focus-region-aria": "解决方案键盘聚焦区域（Tab/Shift+Tab 切换题目，空格/Shift+空格切换图片）",
+    "focus-region-aria": "解决方案键盘聚焦区域（Tab/Shift+Tab 切换题目，空格/Shift+空格切换文件）",
     "tabs": {
       "fallback": "文件 {{index}}"
     },
-    "photo-label": "照片 {{index}} • {{source}}",
+    "file-label": "文件 {{fileName}} • {{source}}",
     "toggle-preview": "切换预览",
     "streaming": {
       "title": "AI 输出",
@@ -186,7 +233,14 @@
   "upload-area": {
     "take-photo": "拍照",
     "upload": "上传文件",
-    "upload-tip": "支持图片；PDF 需要启用 Gemini 源。",
+    "upload-tip": "支持图片和文本；PDF 需要启用 Gemini 源或者启用 OpenAI Responses API。",
+    "text-input": {
+      "button": "文本",
+      "title": "输入题目文本",
+      "description": "直接粘贴或输入题目内容。",
+      "placeholder": "在此输入题目...",
+      "submit": "确认"
+    },
     "camera-help-aria": "相机使用说明",
     "camera-tip": {
       "title": "在不同的设备上拍摄照片",
@@ -198,7 +252,21 @@
       ],
       "close": "知道了"
     },
-    "pdf-disabled": "仅在启用 Gemini 源时支持 PDF 上传。"
+    "pdf-disabled": "仅在启用 Gemini 源或开启 Responses API 的 OpenAI 源时支持 PDF 上传。",
+    "adb": {
+      "connect": "ADB 连接",
+      "reconnect": "重新连接 ADB",
+      "screenshot": "ADB 截图",
+      "connecting": "连接中...",
+      "screenshot-busy": "采集中...",
+      "screenshot-hint": "通过 ADB（WebUSB）从已连接的安卓设备捕获屏幕截图",
+      "menu-aria-label": "ADB 操作菜单",
+      "capture-timeout": "ADB 截图超时，请检查连接"
+    },
+    "toasts": {
+      "adb-failed": "ADB 处理发生异常：{{error}}",
+      "webusb-not-supported": "该浏览器不支持 WebUSB。"
+    }
   },
   "uploads-info": {
     "selected": "已选择"
@@ -217,6 +285,28 @@
       "name": {
         "label": "来源名称",
         "placeholder": "展示在界面中的昵称"
+      },
+      "advanced": {
+        "title": "高级选项",
+        "quick-preset": "快捷调整服务提供商",
+        "quick-preset-placeholder": "选择预设提供商...",
+        "openai-default": "OpenAI (默认)",
+        "openrouter": "OpenRouter",
+        "custom-url": "自定义 URL",
+        "switched-openrouter": "已切换为 OpenRouter",
+        "switched-openai": "已重置为 OpenAI 默认",
+        "enable-responses-api": "启用 Responses API",
+        "responses-api-tip": "提示: 启用 Responses API 后，OpenAI 模型可读取 PDF 并进行联网搜索。未启用此 API 时，这些功能不可用。",
+        "web-search-tool": {
+          "label": "联网搜索工具类型",
+          "placeholder": "选择工具类型...",
+          "auto": "自动 (根据模型选择)",
+          "web-search": "web_search",
+          "web-search-preview": "web_search_preview",
+          "custom": "自定义",
+          "custom-placeholder": "输入自定义工具名称...",
+          "tip": "选择 Responses API 使用的联网搜索工具类型。自动模式会根据模型名称自动选择。"
+        }
       }
     },
     "sources": {
@@ -243,13 +333,24 @@
         "name-placeholder": "例如：教室 Gemini",
         "confirm": "添加",
         "cancel": "取消",
-        "success": "已添加 {{name}}。"
+        "success": "已添加 {{name}}。",
+        "key": "API 密钥",
+        "key-placeholder": "abcdef",
+        "address": "API 地址 （可选）"
       },
       "make-active": "设为当前配置",
       "remove": {
         "label": "删除该源",
         "success": "已删除 {{name}}。",
         "error": "至少保留一个 AI 源。"
+      },
+      "share": {
+        "label": "分享该源",
+        "dialog": {
+          "title": "分享AI源",
+          "desc": "扫描二维码或者在另一台设备上访问URL来导入AI源. 请保护好这个链接.",
+          "copy": "复制"
+        }
       }
     },
     "appearance": {
@@ -287,25 +388,33 @@
       "actions": {
         "upload": {
           "label": "上传文件",
-          "description": "打开文件选择器，挑选图片或 PDF。"
+          "description": "打开文件选择器，挑选文件或 PDF。"
         },
         "camera": {
           "label": "拍照",
           "description": "调用设备相机拍摄作业。"
         },
-        "startScan": {
+        "text-input": {
+          "label": "文本输入",
+          "description": "打开文本输入对话框。"
+        },
+        "adb-screenshot": {
+          "label": "ADB 截图",
+          "description": "通过 ADB 直接截取已连接安卓设备的屏幕。"
+        },
+        "start-scan": {
           "label": "开始识别",
           "description": "将所有待处理的文件发送给 AI 源。"
         },
-        "clearAll": {
+        "clear-all": {
           "label": "清空全部",
           "description": "移除所有已上传的文件与结果。"
         },
-        "openSettings": {
+        "open-settings": {
           "label": "打开设置",
           "description": "从任意页面快速进入设置。"
         },
-        "openChat": {
+        "open-chat": {
           "label": "打开聊天",
           "description": "随时切换到聊天工作区。"
         },
@@ -324,21 +433,43 @@
         "none": "未选择模型",
         "unknown": "未知模型（{{name}}）"
       },
+      "show-selector-in-scanner": "在扫描界面显示模型选择以快速切换模型",
       "refresh": "刷新模型列表",
       "manual": {
         "title": "自定义模型",
+        "select-provider": "选择提供商",
         "placeholder": "模型标识符",
+        "apply": "应用",
         "desc": "如果列表中没有想要的模型，可手动填写名称。"
       },
       "fetch": {
         "error": "获取 {{provider}} 的模型列表失败，请检查 API 密钥或基地址。"
+      },
+      "max-retries": {
+        "label": "最大重试次数",
+        "tip": "当API调用失败时自动重试的最大次数（0-10），设为0则不重试"
+      },
+      "fallback": {
+        "label": "当选择的模型不可用时，回落到",
+        "desc": "当主模型请求失败时，自动切换到此模型重试",
+        "none": "无"
       }
     },
     "thinking": {
       "title": "思考参数",
       "desc": "针对支持的提供商调整高级思考设置。",
       "budget": "可用思考预算",
-      "tokens-unit": "Tokens"
+      "tokens-unit": "Tokens",
+      "online-search": {
+        "title": "联网搜索设置",
+        "toggle": {
+          "settings": "联网搜索",
+          "disabled": "开启联网搜索",
+          "enabled": "已开启联网搜索"
+        },
+        "desc": "在需要时允许助手调用联网搜索工具。",
+        "show-toggle-in-scanner": "在扫描界面显示联网搜索按钮以快速切换"
+      }
     },
     "traits": {
       "title": "系统提示（Traits）",
@@ -365,11 +496,19 @@
       },
       "image-post-processing": {
         "title": "图像后处理",
-        "binarizing": "开启二值化"
+        "enhancement": "开启二值化"
       },
       "ui": {
         "title": "界面",
-        "show-donate-btn": "显示捐赠按钮"
+        "clear-dialog-on-submit": "提交后清空输入框"
+      },
+      "explanation": {
+        "title": "解析显示模式",
+        "mode": {
+          "everything": "显示所有内容",
+          "steps": "当我需要的时候显示必要的步骤"
+        },
+        "search-placeholder": "搜索..."
       }
     }
   },
@@ -415,6 +554,43 @@
       "source": "源代码"
     }
   },
+  "import-settings-page": {
+    "error": {
+      "title": "错误",
+      "parse-failed": "无法解析配置，链接可能已损坏。",
+      "home": "返回首页"
+    },
+    "loading": {
+      "parsing": "正在解析配置..."
+    },
+    "success": {
+      "title": "全部就绪！",
+      "description": "AI 模型 <strong>{{name}}</strong> 已成功导入。",
+      "buttons": {
+        "settings": "设置",
+        "undo": "撤销",
+        "home": "返回首页"
+      }
+    },
+    "confirm": {
+      "title": "导入 AI 模型",
+      "description": "要将此配置添加到你的设置中吗？",
+      "fields": {
+        "name": "名称：",
+        "provider": "提供商：",
+        "model": "模型名称：",
+        "base": "基础 URL："
+      },
+      "alert": {
+        "title": "安全提醒",
+        "description": "仅从可信来源导入配置，否则可能导致隐私泄露，请自行承担风险。"
+      },
+      "buttons": {
+        "cancel": "取消",
+        "confirm": "确认导入"
+      }
+    }
+  },
   "solution-viewer": {
     "progress": {
       "prefix": "题目",
@@ -433,13 +609,17 @@
         "description": "请手动复制。"
       }
     },
-    "source-image": "原始图片：",
+    "source-image": "原始文件：",
     "open-preview": "打开预览",
     "navigation": {
       "prev-problem": "上一题",
       "next-problem": "下一题",
-      "prev-image": "⟵ 图片",
-      "next-image": "图片 ⟶"
+      "prev-image": "⟵ 文件",
+      "next-image": "文件 ⟶"
+    },
+    "online-search": {
+      "title": "联网搜索结果",
+      "placeholder": "没有可用的搜索索引。"
     },
     "chat": {
       "button": "与 AI 聊聊",
@@ -476,6 +656,10 @@
     "placeholder": "例如：请添加更详细的步骤……",
     "submit": "提交",
     "toasts": {
+      "post-processing": {
+        "title": "还在处理...",
+        "description": "图片预处理还在运行, 请再等等"
+      },
       "no-key": {
         "title": "就差一步",
         "description": "请在设置中为 {{provider}} 设置 API 密钥后再尝试。"
@@ -495,8 +679,28 @@
       }
     }
   },
+  "inspect-dialog": {
+    "title": "检查原始数据",
+    "desc": "查看原始的 Markdown 文本",
+    "close": "关闭窗口",
+    "problem": "题目",
+    "answer": "答案",
+    "explanation": "解析",
+    "online-search": "联网搜索",
+    "copy": {
+      "success": "复制成功"
+    }
+  },
   "sources": {
     "upload": "本地上传",
-    "camera": "拍摄"
+    "camera": "拍摄",
+    "adb": "ADB"
+  },
+  "ai-client": {
+    "openai": {
+      "requires-responses-api-online-search": "使用联网搜索功能需要开启 Responses API 设置",
+      "requires-responses-api-pdf": "使用 PDF 识别功能需要开启 Responses API 设置",
+      "web-search-not-supported": "模型 {{model}} 不支持联网搜索，已自动禁用该功能继续处理"
+    }
   }
 }

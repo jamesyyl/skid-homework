@@ -5,7 +5,7 @@ import {
   type ChatMessageRecord,
   type ChatRole,
   type ChatThreadRecord,
-} from "./chat-db";
+} from "../db/chat-db";
 
 type MessageInput = {
   id?: string;
@@ -25,11 +25,9 @@ type CreateChatInput = {
 interface ChatState {
   threads: ChatThreadRecord[];
   messages: Record<string, ChatMessageRecord[]>;
-  activeChatId?: string;
   isHydrated: boolean;
   loadThreads: () => Promise<void>;
   loadMessages: (chatId: string) => Promise<ChatMessageRecord[]>;
-  setActiveChat: (chatId?: string) => void;
   createChat: (input: CreateChatInput) => Promise<string>;
   appendMessage: (
     chatId: string,
@@ -42,11 +40,17 @@ interface ChatState {
   ) => Promise<ChatMessageRecord | null>;
   updateThread: (
     chatId: string,
-    updates: Partial<Pick<ChatThreadRecord, "title" | "sourceId" | "model" | "metadata" | "updatedAt">>,
+    updates: Partial<
+      Pick<
+        ChatThreadRecord,
+        "title" | "sourceId" | "model" | "metadata" | "updatedAt"
+      >
+    >,
   ) => Promise<void>;
   renameChat: (chatId: string, title: string) => Promise<void>;
   deleteChat: (chatId: string) => Promise<void>;
   clearAllChats: () => Promise<void>;
+  searchChats: (query: string) => Promise<string[]>;
 }
 
 const sortThreadsByUpdated = (threads: ChatThreadRecord[]) =>
@@ -58,7 +62,10 @@ const mergeMessage = (
   message: ChatMessageRecord,
 ) => {
   const existing = stateMessages[chatId] ?? [];
-  const nextMessages = [...existing.filter((m) => m.id !== message.id), message];
+  const nextMessages = [
+    ...existing.filter((m) => m.id !== message.id),
+    message,
+  ];
   nextMessages.sort((a, b) => a.createdAt - b.createdAt);
   return {
     ...stateMessages,
@@ -69,7 +76,6 @@ const mergeMessage = (
 export const useChatStore = create<ChatState>((set) => ({
   threads: [],
   messages: {},
-  activeChatId: undefined,
   isHydrated: false,
 
   loadThreads: async () => {
@@ -77,20 +83,10 @@ export const useChatStore = create<ChatState>((set) => ({
       .orderBy("updatedAt")
       .reverse()
       .toArray();
-    set((state) => {
-      let activeChatId = state.activeChatId;
-      if (threads.length && !activeChatId) {
-        activeChatId = threads[0].id;
-      } else if (
-        activeChatId &&
-        threads.every((thread) => thread.id !== activeChatId)
-      ) {
-        activeChatId = threads[0]?.id;
-      }
+    set(() => {
       return {
         threads,
         isHydrated: true,
-        activeChatId,
       };
     });
   },
@@ -107,16 +103,6 @@ export const useChatStore = create<ChatState>((set) => ({
       },
     }));
     return messages;
-  },
-
-  setActiveChat: (chatId) => {
-    set((state) => {
-      if (!chatId) {
-        return { activeChatId: undefined };
-      }
-      const exists = state.threads.some((thread) => thread.id === chatId);
-      return exists ? { activeChatId: chatId } : state;
-    });
   },
 
   createChat: async ({ title, sourceId, model, metadata, initialMessages }) => {
@@ -138,15 +124,21 @@ export const useChatStore = create<ChatState>((set) => ({
         chatId,
         role: message.role,
         content: message.content,
+        error: false,
         createdAt: message.createdAt ?? Date.now(),
       })) ?? [];
 
-    await chatDb.transaction("rw", chatDb.threads, chatDb.messages, async () => {
-      await chatDb.threads.add(thread);
-      if (preparedMessages.length) {
-        await chatDb.messages.bulkAdd(preparedMessages);
-      }
-    });
+    await chatDb.transaction(
+      "rw",
+      chatDb.threads,
+      chatDb.messages,
+      async () => {
+        await chatDb.threads.add(thread);
+        if (preparedMessages.length) {
+          await chatDb.messages.bulkAdd(preparedMessages);
+        }
+      },
+    );
 
     set((state) => ({
       threads: sortThreadsByUpdated([thread, ...state.threads]),
@@ -158,7 +150,6 @@ export const useChatStore = create<ChatState>((set) => ({
             ),
           }
         : state.messages,
-      activeChatId: chatId,
     }));
 
     return chatId;
@@ -170,13 +161,19 @@ export const useChatStore = create<ChatState>((set) => ({
       chatId,
       role: input.role,
       content: input.content,
+      error: false,
       createdAt: input.createdAt ?? Date.now(),
     };
 
-    await chatDb.transaction("rw", chatDb.threads, chatDb.messages, async () => {
-      await chatDb.messages.put(message);
-      await chatDb.threads.update(chatId, { updatedAt: message.createdAt });
-    });
+    await chatDb.transaction(
+      "rw",
+      chatDb.threads,
+      chatDb.messages,
+      async () => {
+        await chatDb.messages.put(message);
+        await chatDb.threads.update(chatId, { updatedAt: message.createdAt });
+      },
+    );
 
     set((state) => {
       const nextThreads = sortThreadsByUpdated(
@@ -211,7 +208,10 @@ export const useChatStore = create<ChatState>((set) => ({
         ? sortThreadsByUpdated(
             state.threads.map((thread) =>
               thread.id === chatId
-                ? { ...thread, updatedAt: updates.createdAt ?? thread.updatedAt }
+                ? {
+                    ...thread,
+                    updatedAt: updates.createdAt ?? thread.updatedAt,
+                  }
                 : thread,
             ),
           )
@@ -267,35 +267,67 @@ export const useChatStore = create<ChatState>((set) => ({
   },
 
   deleteChat: async (chatId) => {
-    await chatDb.transaction("rw", chatDb.threads, chatDb.messages, async () => {
-      await chatDb.messages.where("chatId").equals(chatId).delete();
-      await chatDb.threads.delete(chatId);
-    });
+    await chatDb.transaction(
+      "rw",
+      chatDb.threads,
+      chatDb.messages,
+      async () => {
+        await chatDb.messages.where("chatId").equals(chatId).delete();
+        await chatDb.threads.delete(chatId);
+      },
+    );
 
     set((state) => {
-      const nextThreads = state.threads.filter((thread) => thread.id !== chatId);
-      const { [chatId]: _removed, ...restMessages } = state.messages;
-      const nextActive =
-        state.activeChatId === chatId ? nextThreads[0]?.id : state.activeChatId;
+      const nextThreads = state.threads.filter(
+        (thread) => thread.id !== chatId,
+      );
+      const { ...restMessages } = state.messages;
       return {
         threads: nextThreads,
         messages: restMessages,
-        activeChatId: nextActive,
       };
     });
   },
 
   clearAllChats: async () => {
-    await chatDb.transaction("rw", chatDb.threads, chatDb.messages, async () => {
-      await chatDb.messages.clear();
-      await chatDb.threads.clear();
-    });
+    await chatDb.transaction(
+      "rw",
+      chatDb.threads,
+      chatDb.messages,
+      async () => {
+        await chatDb.messages.clear();
+        await chatDb.threads.clear();
+      },
+    );
 
     set({
       threads: [],
       messages: {},
-      activeChatId: undefined,
       isHydrated: true,
     });
+  },
+
+  searchChats: async (query: string) => {
+    if (!query || query.trim().length === 0) return [];
+    const lowerQuery = query.toLowerCase();
+
+    // 1. Search in Thread Titles
+    const matchingThreadIds = new Set<string>();
+    const allThreads = await chatDb.threads.toArray();
+    allThreads.forEach((t) => {
+      if (t.title.toLowerCase().includes(lowerQuery)) {
+        matchingThreadIds.add(t.id);
+      }
+    });
+
+    // 2. Search in Messages content
+    // Note: This filters all messages. For very large DBs, full-text indexing is recommended.
+    const matchingMessages = await chatDb.messages
+      .filter((m) => m.content.toLowerCase().includes(lowerQuery))
+      .toArray();
+
+    matchingMessages.forEach((m) => matchingThreadIds.add(m.chatId));
+
+    return Array.from(matchingThreadIds);
   },
 }));

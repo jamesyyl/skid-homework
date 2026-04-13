@@ -1,6 +1,8 @@
+"use client";
 import { motion } from "framer-motion";
-import { Sparkles, ShieldCheck, Camera, Rocket } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Camera, Rocket, ShieldCheck, Sparkles } from "lucide-react";
+import { SubmitEvent, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import {
@@ -8,7 +10,6 @@ import {
   DEFAULT_OPENAI_BASE_URL,
   useAiStore,
 } from "@/store/ai-store";
-import { useLocation, useNavigate } from "react-router-dom";
 import {
   Accordion,
   AccordionContent,
@@ -34,38 +35,35 @@ export default function InitPage() {
     activeSource?.baseUrl,
   );
 
-  useEffect(() => {
-    setKey(activeSource?.apiKey ?? "");
-    setBaseUrl(activeSource?.baseUrl);
-  }, [activeSource]);
-
-  const navigate = useNavigate();
-  const location = useLocation() as { state?: { from?: Location } };
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { t } = useTranslation("commons", { keyPrefix: "init-page" });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: SubmitEvent) => {
     e.preventDefault();
     if (!activeSource) return;
     const trimmedKey = key.trim();
     if (!trimmedKey) return;
 
     const trimmedBase = (baseUrl ?? "").trim();
+    const defaultBaseUrl =
+      activeSource.provider === "gemini"
+        ? DEFAULT_GEMINI_BASE_URL
+        : DEFAULT_OPENAI_BASE_URL;
+
     updateSource(activeSource.id, {
       apiKey: trimmedKey || null,
-      baseUrl:
-        trimmedBase ||
-        (activeSource.provider === "gemini"
-          ? DEFAULT_GEMINI_BASE_URL
-          : DEFAULT_OPENAI_BASE_URL),
+      baseUrl: trimmedBase || defaultBaseUrl,
       enabled: true,
     });
-    const to = location.state?.from?.pathname ?? "/";
-    navigate(to, { replace: true });
+    const from = searchParams.get("from");
+    const to = from && from !== "/init" ? from : "/";
+    router.replace(to);
   };
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-gradient-to-b">
-      <div className="pointer-events-none absolute inset-0 [mask-image:radial-gradient(ellipse_at_center,black,transparent_70%)]">
+    <div className="relative min-h-screen overflow-hidden bg-linear-to-b">
+      <div className="pointer-events-none absolute inset-0 mask-[radial-gradient(ellipse_at_center,black,transparent_70%)]">
         <svg
           className="absolute inset-0 h-full w-full opacity-[0.12]"
           xmlns="http://www.w3.org/2000/svg"
@@ -87,8 +85,8 @@ export default function InitPage() {
           </defs>
           <rect width="100%" height="100%" fill="url(#grid)" />
         </svg>
-        <div className="absolute -left-32 -top-32 h-[420px] w-[420px] rounded-full bg-indigo-500/20 blur-3xl" />
-        <div className="absolute bottom-0 right-0 h-[380px] w-[380px] rounded-full bg-fuchsia-500/20 blur-3xl" />
+        <div className="absolute -left-32 -top-32 h-105 w-105 rounded-full bg-indigo-500/20 blur-3xl" />
+        <div className="absolute bottom-0 right-0 h-95 w-95 rounded-full bg-fuchsia-500/20 blur-3xl" />
       </div>
 
       <header className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
@@ -110,7 +108,7 @@ export default function InitPage() {
               transition={{ duration: 0.6 }}
               className="text-balance text-4xl font-bold leading-tight tracking-tight md:text-5xl"
             >
-              <span className="bg-gradient-to-r from-indigo-300 via-slate-500 dark:via-white to-fuchsia-300 bg-clip-text text-transparent">
+              <span className="bg-linear-to-r from-indigo-300 via-slate-500 dark:via-white to-fuchsia-300 bg-clip-text text-transparent">
                 {t("headline.highlight")}
               </span>
               <br />
@@ -263,7 +261,7 @@ export default function InitPage() {
                 <Camera className="h-5 w-5" />
                 <span className="text-sm">{t("preview.title")}</span>
               </div>
-              <div className="aspect-[16/10] w-full rounded-xl bg-gradient-to-br from-indigo-500/20 to-fuchsia-500/20 ring-1 ring-white/10" />
+              <div className="aspect-16/10 w-full rounded-xl bg-linear-to-br from-indigo-500/20 to-fuchsia-500/20 ring-1 ring-white/10" />
               <div className="mt-4 grid grid-cols-3 gap-3 text-xs text-slate-300">
                 <div className="rounded-lg border border-white/10 bg-slate-950/40 p-3">
                   {t("preview.ocr")}
@@ -287,7 +285,8 @@ export default function InitPage() {
             href="https://github.com/cubewhy/skid-homework"
             className="underline"
           >
-            {t("footer.source")}
+            {/* {t("footer.source")} */}
+            https://github.com/cubewhy/skid-homework
           </a>
         </div>
       </footer>
